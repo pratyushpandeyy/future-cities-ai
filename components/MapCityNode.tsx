@@ -6,6 +6,8 @@ import type { MouseEvent } from "react";
 export interface MapCityNodeData {
   name: string;
   region: string;
+  longitude: number;
+  latitude: number;
   x: number;
   y: number;
   livabilityScore: number;
