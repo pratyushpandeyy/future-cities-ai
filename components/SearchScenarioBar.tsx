@@ -3,7 +3,8 @@
 import type { FormEvent } from "react";
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { Search, SlidersHorizontal } from "lucide-react";
+import { Search, SlidersHorizontal, Sparkles } from "lucide-react";
+import type { Season } from "@/lib/climateOverlaySimulation";
 
 export type ScenarioMode = "predicted" | "manual";
 export type SearchResult = "known" | "regional";
@@ -13,12 +14,15 @@ interface SearchScenarioBarProps {
   warming: number;
   predictedWarming: number;
   selectedYear: number;
+  season: Season;
   comparisonMode: boolean;
   scientificView: boolean;
   onModeChange: (mode: ScenarioMode) => void;
   onWarmingChange: (warming: number) => void;
+  onSeasonChange: (season: Season) => void;
   onComparisonModeChange: (enabled: boolean) => void;
   onScientificViewChange: (enabled: boolean) => void;
+  onDemoTourStart: () => void;
   onSearch: (query: string) => SearchResult;
 }
 
@@ -27,12 +31,15 @@ export default function SearchScenarioBar({
   warming,
   predictedWarming,
   selectedYear,
+  season,
   comparisonMode,
   scientificView,
   onModeChange,
   onWarmingChange,
+  onSeasonChange,
   onComparisonModeChange,
   onScientificViewChange,
+  onDemoTourStart,
   onSearch,
 }: SearchScenarioBarProps) {
   const [query, setQuery] = useState("");
@@ -155,6 +162,32 @@ export default function SearchScenarioBar({
           >
             Scientific View
           </button>
+          <button
+            type="button"
+            onClick={onDemoTourStart}
+            className="inline-flex items-center gap-2 rounded-full border border-cyan-100/30 bg-cyan-100/10 px-3 py-1.5 text-xs font-medium uppercase tracking-[0.18em] text-cyan-50 shadow-[0_0_24px_rgba(34,211,238,0.12)] transition hover:border-cyan-100/50 hover:bg-cyan-100/15"
+          >
+            <Sparkles size={13} strokeWidth={1.8} />
+            Demo Tour
+          </button>
+        </div>
+        <div className="flex rounded-full border border-white/10 bg-white/[0.035] p-1">
+          {(["Spring", "Summer", "Monsoon", "Winter"] as const).map(
+            (seasonOption) => (
+              <button
+                key={seasonOption}
+                type="button"
+                onClick={() => onSeasonChange(seasonOption)}
+                className={`rounded-full px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.14em] transition ${
+                  season === seasonOption
+                    ? "bg-cyan-100/15 text-cyan-50"
+                    : "text-white/40 hover:text-white"
+                }`}
+              >
+                {seasonOption}
+              </button>
+            ),
+          )}
         </div>
         <p className="text-xs text-white/40">
           {comparisonMode

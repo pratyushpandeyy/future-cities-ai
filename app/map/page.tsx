@@ -1,14 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
-import { ArrowLeft, Layers } from "lucide-react";
+import { ArrowLeft, Layers, Pause, Play, SkipBack, SkipForward, X } from "lucide-react";
 import type { AreaRiskData } from "@/components/AreaRiskInspector";
 import ComparisonScenarioControls, {
   type ComparisonScenarioConfig,
 } from "@/components/ComparisonScenarioControls";
-import IntelligencePanel from "@/components/IntelligencePanel";
+import IntelligencePanel, { type PanelTab } from "@/components/IntelligencePanel";
 import LayerToggle from "@/components/LayerToggle";
 import MapboxView, { type SyncedMapView } from "@/components/MapboxView";
 import type { MapCityNodeData } from "@/components/MapCityNode";
@@ -17,6 +17,15 @@ import SearchScenarioBar, {
   type ScenarioMode,
   type SearchResult,
 } from "@/components/SearchScenarioBar";
+import {
+  createKnownRegionalMapping,
+  generateClimateOverlays,
+  type Season,
+} from "@/lib/climateOverlaySimulation";
+import {
+  simulateLocalUrbanCell,
+  type LocalUrbanCellData,
+} from "@/lib/localCellSimulation";
 
 const cityNodes: MapCityNodeData[] = [
   {
@@ -109,8 +118,10 @@ const cityNodes: MapCityNodeData[] = [
 const layerNames = [
   "Heat Risk",
   "Flood Risk",
+  "Outdoor Comfort",
   "Air Quality",
   "Green Cover",
+  "Livability Stress",
   "Water Stress",
   "Culture/Sports Lens",
 ] as const;
@@ -126,6 +137,16 @@ const predictedWarmingByYear: Record<number, number> = {
 type LayerState = Record<(typeof layerNames)[number], boolean>;
 type InspectedScenario = "A" | "B";
 
+function createLayerPreset(enabledLayers: (typeof layerNames)[number][]) {
+  return layerNames.reduce<LayerState>(
+    (layers, layerName) => ({
+      ...layers,
+      [layerName]: enabledLayers.includes(layerName),
+    }),
+    {} as LayerState,
+  );
+}
+
 const initialLayers = layerNames.reduce<LayerState>(
   (layers, layerName, index) => ({
     ...layers,
@@ -137,18 +158,100 @@ const initialLayers = layerNames.reduce<LayerState>(
 const scenarioAInitial: ComparisonScenarioConfig = {
   year: 2030,
   warming: 1.7,
+  season: "Summer",
   overlays: { ...initialLayers },
 };
 
 const scenarioBInitial: ComparisonScenarioConfig = {
   year: 2050,
   warming: 2.7,
+  season: "Summer",
   overlays: {
     ...initialLayers,
     "Green Cover": true,
+    "Livability Stress": true,
     "Culture/Sports Lens": true,
   },
 };
+
+interface DemoStep {
+  title: string;
+  cityName: string;
+  description: string;
+  comparisonMode: boolean;
+  targetTab: PanelTab;
+  inspectedScenario?: InspectedScenario;
+  year: number;
+  warming: number;
+  season: Season;
+  layers: LayerState;
+  scenarioA?: ComparisonScenarioConfig;
+  scenarioB?: ComparisonScenarioConfig;
+}
+
+const demoSteps: DemoStep[] = [
+  {
+    title: "Mumbai heat risk 2030",
+    cityName: "Mumbai",
+    description:
+      "Coastal density and limited cooling cover push heat exposure higher across the mapped Maharashtra corridor.",
+    comparisonMode: false,
+    targetTab: "Overview",
+    year: 2030,
+    warming: 1.7,
+    season: "Summer",
+    layers: createLayerPreset(["Heat Risk"]),
+  },
+  {
+    title: "Istanbul comparison 2030 vs 2050",
+    cityName: "Istanbul",
+    description:
+      "The split view contrasts a near-term Bosphorus climate profile with a hotter mid-century Marmara scenario.",
+    comparisonMode: true,
+    targetTab: "Comparison",
+    inspectedScenario: "B",
+    year: 2030,
+    warming: 1.7,
+    season: "Summer",
+    layers: createLayerPreset(["Heat Risk", "Livability Stress"]),
+    scenarioA: {
+      year: 2030,
+      warming: 1.7,
+      season: "Summer",
+      overlays: createLayerPreset(["Heat Risk"]),
+    },
+    scenarioB: {
+      year: 2050,
+      warming: 2.7,
+      season: "Summer",
+      overlays: createLayerPreset(["Heat Risk", "Livability Stress"]),
+    },
+  },
+  {
+    title: "Bangalore monsoon flood risk",
+    cityName: "Bangalore",
+    description:
+      "Monsoon mode shifts attention to lake systems, flood exposure, and commute reliability around dense growth zones.",
+    comparisonMode: false,
+    targetTab: "Impact",
+    year: 2040,
+    warming: 2.1,
+    season: "Monsoon",
+    layers: createLayerPreset(["Flood Risk", "Water Stress"]),
+  },
+  {
+    title: "Manchester outdoor comfort",
+    cityName: "Manchester",
+    description:
+      "Outdoor comfort mode highlights cooler streets, green corridors, and culture districts under a softer warming path.",
+    comparisonMode: false,
+    targetTab: "Regional Mapping",
+    year: 2050,
+    warming: 2.7,
+    season: "Winter",
+    layers: createLayerPreset(["Outdoor Comfort", "Green Cover"]),
+  },
+];
 
 function getRiskLabel(value: number) {
   if (value >= 76) {
@@ -176,6 +279,32 @@ function getComfortLabel(value: number) {
   }
 
   return "Low";
+}
+
+function getRiskScoreFromLabel(label: string) {
+  if (label === "High") {
+    return 78;
+  }
+
+  if (label === "Elevated" || label === "Rising") {
+    return 62;
+  }
+
+  if (label === "Moderate" || label === "Variable" || label === "Medium") {
+    return 42;
+  }
+
+  return 22;
+}
+
+function getGreenCoverScore(value: string) {
+  const parsedValue = Number.parseInt(value.replace("%", ""), 10);
+
+  return Number.isFinite(parsedValue) ? parsedValue : 20;
+}
+
+function formatGreenCover(value: number) {
+  return `${Math.min(48, Math.max(4, Math.round(value)))}%`;
 }
 
 function createAreaRisk(x: number, y: number): AreaRiskData {
@@ -213,19 +342,34 @@ function createAreaRisk(x: number, y: number): AreaRiskData {
 function createScenarioCity(
   city: MapCityNodeData,
   warming: number,
+  localCell?: LocalUrbanCellData | null,
 ): MapCityNodeData {
   const heatPressure = Math.max(0, warming - 1);
   const livabilityScore = Math.max(
     42,
-    Math.round(city.livabilityScore - heatPressure * 6),
+    Math.round(
+      city.livabilityScore -
+        heatPressure * 6 +
+        (localCell?.livabilityAdjustment ?? 0),
+    ),
   );
   const heatScore =
-    city.heatRisk === "High" ? 78 : city.heatRisk === "Rising" ? 66 : 48;
+    getRiskScoreFromLabel(city.heatRisk) +
+    heatPressure * 14 +
+    (localCell?.heatRiskAdjustment ?? 0);
+  const floodScore =
+    getRiskScoreFromLabel(city.floodRisk) +
+    (localCell?.floodRiskAdjustment ?? 0);
 
   return {
     ...city,
     livabilityScore,
-    heatRisk: getRiskLabel(heatScore + heatPressure * 14),
+    heatRisk: getRiskLabel(heatScore),
+    floodRisk: getRiskLabel(floodScore),
+    greenCover: formatGreenCover(
+      getGreenCoverScore(city.greenCover) +
+        (localCell?.greenCoverAdjustment ?? 0),
+    ),
   };
 }
 
@@ -261,6 +405,7 @@ function createRegionalMapping(
     climateZone: climateZones[hash % climateZones.length],
     confidence: hash % 3 === 0 ? "Medium" : "High",
     nearestGridCell: `FC-GRID-${(1000 + (hash % 9000)).toString()}`,
+    boundarySource: "simulated",
     longitude,
     latitude,
   };
@@ -288,8 +433,14 @@ function createRegionalCity(mapping: RegionalMappingData): MapCityNodeData {
   };
 }
 
-function getOutdoorComfort(warming: number) {
-  const comfortScore = Math.max(18, Math.round(86 - warming * 15));
+function getOutdoorComfort(
+  warming: number,
+  localCell?: LocalUrbanCellData | null,
+) {
+  const comfortScore = Math.max(
+    18,
+    Math.round(86 - warming * 15 + (localCell?.outdoorComfortAdjustment ?? 0)),
+  );
 
   return getComfortLabel(comfortScore);
 }
@@ -298,9 +449,10 @@ function createComparisonMetrics(
   city: MapCityNodeData,
   scenarioA: ComparisonScenarioConfig,
   scenarioB: ComparisonScenarioConfig,
+  localCell?: LocalUrbanCellData | null,
 ) {
-  const cityA = createScenarioCity(city, scenarioA.warming);
-  const cityB = createScenarioCity(city, scenarioB.warming);
+  const cityA = createScenarioCity(city, scenarioA.warming, localCell);
+  const cityB = createScenarioCity(city, scenarioB.warming, localCell);
   const heatIncrease = Math.max(
     0,
     Math.round((scenarioB.warming - scenarioA.warming) * 16),
@@ -309,8 +461,15 @@ function createComparisonMetrics(
     0,
     cityA.livabilityScore - cityB.livabilityScore,
   );
-  const comfortA = Math.max(18, Math.round(86 - scenarioA.warming * 15));
-  const comfortB = Math.max(18, Math.round(86 - scenarioB.warming * 15));
+  const localComfortAdjustment = localCell?.outdoorComfortAdjustment ?? 0;
+  const comfortA = Math.max(
+    18,
+    Math.round(86 - scenarioA.warming * 15 + localComfortAdjustment),
+  );
+  const comfortB = Math.max(
+    18,
+    Math.round(86 - scenarioB.warming * 15 + localComfortAdjustment),
+  );
   const outdoorComfortChange = Math.max(0, comfortA - comfortB);
 
   return {
@@ -335,6 +494,8 @@ export default function MapPage() {
   const [areaRisk, setAreaRisk] = useState<AreaRiskData | null>(null);
   const [scenarioMode, setScenarioMode] = useState<ScenarioMode>("predicted");
   const [manualWarming, setManualWarming] = useState(2.1);
+  const [selectedSeason, setSelectedSeason] = useState<Season>("Summer");
+  const [climateOverlayEnabled, setClimateOverlayEnabled] = useState(false);
   const [focusedCityName, setFocusedCityName] = useState(selectedCity.name);
   const [focusRequestId, setFocusRequestId] = useState(0);
   const [comparisonMode, setComparisonMode] = useState(false);
@@ -347,32 +508,181 @@ export default function MapPage() {
   const [lastMapView, setLastMapView] = useState<SyncedMapView | null>(null);
   const [regionalMapping, setRegionalMapping] =
     useState<RegionalMappingData | null>(null);
+  const [localUrbanCell, setLocalUrbanCell] =
+    useState<LocalUrbanCellData | null>(null);
   const [inspectedScenario, setInspectedScenario] =
     useState<InspectedScenario>("B");
+  const [activePanelTab, setActivePanelTab] = useState<PanelTab>("Overview");
+  const [demoActive, setDemoActive] = useState(false);
+  const [demoIndex, setDemoIndex] = useState(0);
+  const [demoPaused, setDemoPaused] = useState(false);
 
   const activeLayers = layerNames.filter((layerName) => layers[layerName]);
+  const currentDemoStep = demoActive ? demoSteps[demoIndex] : null;
   const predictedWarming = predictedWarmingByYear[selectedYear];
   const activeWarming =
     scenarioMode === "predicted" ? predictedWarming : manualWarming;
-  const scenarioCity = createScenarioCity(selectedCity, activeWarming);
-  const outdoorComfort = getOutdoorComfort(activeWarming);
+  const scenarioCity = createScenarioCity(
+    selectedCity,
+    activeWarming,
+    localUrbanCell,
+  );
+  const outdoorComfort = getOutdoorComfort(activeWarming, localUrbanCell);
   const inspectedScenarioConfig =
     inspectedScenario === "A" ? scenarioA : scenarioB;
   const panelCity = comparisonMode
-    ? createScenarioCity(selectedCity, inspectedScenarioConfig.warming)
+    ? createScenarioCity(
+        selectedCity,
+        inspectedScenarioConfig.warming,
+        localUrbanCell,
+      )
     : scenarioCity;
   const panelYear = comparisonMode ? inspectedScenarioConfig.year : selectedYear;
   const panelWarming = comparisonMode
     ? inspectedScenarioConfig.warming
     : activeWarming;
   const panelOutdoorComfort = comparisonMode
-    ? getOutdoorComfort(inspectedScenarioConfig.warming)
+    ? getOutdoorComfort(inspectedScenarioConfig.warming, localUrbanCell)
     : outdoorComfort;
+  const panelActiveOverlays = comparisonMode
+    ? layerNames.filter((layerName) => inspectedScenarioConfig.overlays[layerName])
+    : activeLayers;
   const comparisonMetrics = createComparisonMetrics(
     selectedCity,
     scenarioA,
     scenarioB,
+    localUrbanCell,
   );
+  const scenarioACity = createScenarioCity(
+    selectedCity,
+    scenarioA.warming,
+    localUrbanCell,
+  );
+  const scenarioBCity = createScenarioCity(
+    selectedCity,
+    scenarioB.warming,
+    localUrbanCell,
+  );
+  const scenarioASnapshot = {
+    label: "Scenario A",
+    year: scenarioA.year,
+    warming: scenarioA.warming,
+    heatRisk: scenarioACity.heatRisk,
+    floodRisk: scenarioACity.floodRisk,
+    greenCover: scenarioACity.greenCover,
+    livabilityScore: scenarioACity.livabilityScore,
+    outdoorComfort: getOutdoorComfort(scenarioA.warming, localUrbanCell),
+  };
+  const scenarioBSnapshot = {
+    label: "Scenario B",
+    year: scenarioB.year,
+    warming: scenarioB.warming,
+    heatRisk: scenarioBCity.heatRisk,
+    floodRisk: scenarioBCity.floodRisk,
+    greenCover: scenarioBCity.greenCover,
+    livabilityScore: scenarioBCity.livabilityScore,
+    outdoorComfort: getOutdoorComfort(scenarioB.warming, localUrbanCell),
+  };
+  const singleClimateOverlays = useMemo(
+    () =>
+      climateOverlayEnabled
+        ? generateClimateOverlays({
+            year: selectedYear,
+            warming: activeWarming,
+            season: selectedSeason,
+            enabledLayers: layers,
+            localUrbanCell,
+          })
+        : [],
+    [
+      activeWarming,
+      climateOverlayEnabled,
+      layers,
+      localUrbanCell,
+      selectedSeason,
+      selectedYear,
+    ],
+  );
+  const scenarioAClimateOverlays = useMemo(
+    () =>
+      climateOverlayEnabled
+        ? generateClimateOverlays({
+            year: scenarioA.year,
+            warming: scenarioA.warming,
+            season: scenarioA.season,
+            enabledLayers: scenarioA.overlays,
+            localUrbanCell,
+          })
+        : [],
+    [climateOverlayEnabled, localUrbanCell, scenarioA],
+  );
+  const scenarioBClimateOverlays = useMemo(
+    () =>
+      climateOverlayEnabled
+        ? generateClimateOverlays({
+            year: scenarioB.year,
+            warming: scenarioB.warming,
+            season: scenarioB.season,
+            enabledLayers: scenarioB.overlays,
+            localUrbanCell,
+          })
+        : [],
+    [climateOverlayEnabled, localUrbanCell, scenarioB],
+  );
+
+  useEffect(() => {
+    if (!comparisonMode && activePanelTab === "Comparison") {
+      setActivePanelTab("Overview");
+    }
+  }, [activePanelTab, comparisonMode]);
+
+  useEffect(() => {
+    if (!currentDemoStep) {
+      return;
+    }
+
+    const demoCity =
+      cityNodes.find((city) => city.name === currentDemoStep.cityName) ??
+      cityNodes[0];
+
+    setSelectedCity(demoCity);
+    setRegionalMapping(createKnownRegionalMapping(demoCity.name));
+    setFocusedCityName(demoCity.name);
+    setFocusRequestId((currentId) => currentId + 1);
+    setClimateOverlayEnabled(true);
+    setLayers(currentDemoStep.layers);
+    setSelectedYear(currentDemoStep.year);
+    setManualWarming(currentDemoStep.warming);
+    setScenarioMode("manual");
+    setSelectedSeason(currentDemoStep.season);
+    setComparisonMode(currentDemoStep.comparisonMode);
+    setActivePanelTab(currentDemoStep.targetTab);
+    setInspectedScenario(currentDemoStep.inspectedScenario ?? "B");
+    setAreaRisk(null);
+    setLocalUrbanCell(null);
+
+    if (currentDemoStep.scenarioA) {
+      setScenarioA(currentDemoStep.scenarioA);
+    }
+
+    if (currentDemoStep.scenarioB) {
+      setScenarioB(currentDemoStep.scenarioB);
+    }
+  }, [currentDemoStep]);
+
+  useEffect(() => {
+    if (!demoActive || demoPaused || demoIndex >= demoSteps.length - 1) {
+      return;
+    }
+
+    const timeoutId = window.setTimeout(() => {
+      setDemoIndex((currentIndex) =>
+        Math.min(currentIndex + 1, demoSteps.length - 1),
+      );
+    }, 6500);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [demoActive, demoIndex, demoPaused]);
 
   function toggleLayer(layerName: keyof LayerState) {
     setLayers((currentLayers) => ({
@@ -381,18 +691,56 @@ export default function MapPage() {
     }));
   }
 
-  const inspectArea = useCallback((position: { x: number; y: number }) => {
+  function updateComparisonMode(enabled: boolean) {
+    setComparisonMode(enabled);
+
+    if (!enabled) {
+      setActivePanelTab("Overview");
+    }
+  }
+
+  function startDemoTour() {
+    setDemoIndex(0);
+    setDemoPaused(false);
+    setDemoActive(true);
+  }
+
+  function exitDemoTour() {
+    setDemoActive(false);
+    setDemoPaused(false);
+    setActivePanelTab("Overview");
+  }
+
+  function showNextDemoStep() {
+    setDemoIndex((currentIndex) =>
+      Math.min(currentIndex + 1, demoSteps.length - 1),
+    );
+  }
+
+  function showPreviousDemoStep() {
+    setDemoIndex((currentIndex) => Math.max(currentIndex - 1, 0));
+  }
+
+  const inspectArea = useCallback((position: {
+    x: number;
+    y: number;
+    latitude: number;
+    longitude: number;
+  }) => {
     setAreaRisk(
       createAreaRisk(
         Math.min(100, Math.max(0, position.x)),
         Math.min(100, Math.max(0, position.y)),
       ),
     );
+    setLocalUrbanCell(
+      simulateLocalUrbanCell(position.latitude, position.longitude),
+    );
   }, []);
 
   const selectCity = useCallback((city: MapCityNodeData) => {
     setSelectedCity(city);
-    setRegionalMapping(null);
+    setRegionalMapping(createKnownRegionalMapping(city.name));
   }, []);
 
   const syncComparisonView = useCallback((view: SyncedMapView) => {
@@ -408,7 +756,7 @@ export default function MapPage() {
 
     if (matchedCity) {
       setSelectedCity(matchedCity);
-      setRegionalMapping(null);
+      setRegionalMapping(createKnownRegionalMapping(matchedCity.name));
       setFocusedCityName(matchedCity.name);
       setFocusRequestId((currentId) => currentId + 1);
       return "known";
@@ -464,6 +812,13 @@ export default function MapPage() {
           </div>
 
           <div className="mt-7 space-y-3">
+            <LayerToggle
+              label="Climate Overlay"
+              enabled={climateOverlayEnabled}
+              onToggle={() =>
+                setClimateOverlayEnabled((currentValue) => !currentValue)
+              }
+            />
             {layerNames.map((layerName) => (
               <LayerToggle
                 key={layerName}
@@ -479,9 +834,13 @@ export default function MapPage() {
               Active overlays
             </p>
             <p className="mt-3 text-sm leading-6 text-white/60">
-              {activeLayers.length > 0
-                ? activeLayers.join(" / ")
-                : "No layers active"}
+              {climateOverlayEnabled
+                ? !regionalMapping
+                  ? "Search a place to view regional climate overlay."
+                  : activeLayers.length > 0
+                    ? activeLayers.join(" / ")
+                    : "Region overlay on / no layers active"
+                : "Climate overlay off"}
             </p>
           </div>
         </motion.header>
@@ -504,23 +863,90 @@ export default function MapPage() {
             warming={manualWarming}
             predictedWarming={predictedWarming}
             selectedYear={selectedYear}
+            season={selectedSeason}
             comparisonMode={comparisonMode}
             scientificView={scientificView}
             onModeChange={setScenarioMode}
             onWarmingChange={setManualWarming}
-            onComparisonModeChange={setComparisonMode}
+            onSeasonChange={setSelectedSeason}
+            onComparisonModeChange={updateComparisonMode}
             onScientificViewChange={setScientificView}
+            onDemoTourStart={startDemoTour}
             onSearch={searchRegion}
           />
+
+          {currentDemoStep ? (
+            <motion.div
+              key={currentDemoStep.title}
+              initial={{ opacity: 0, y: 16 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: 16 }}
+              className="absolute bottom-20 left-1/2 z-50 w-[min(520px,calc(100%-2rem))] -translate-x-1/2 rounded-lg border border-cyan-100/20 bg-black/72 p-4 shadow-[0_24px_80px_rgba(0,0,0,0.55)] backdrop-blur-2xl"
+            >
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-[0.26em] text-cyan-100/60">
+                    Demo Tour {demoIndex + 1}/{demoSteps.length}
+                  </p>
+                  <h3 className="mt-2 text-lg font-semibold text-white">
+                    {currentDemoStep.title}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={exitDemoTour}
+                  className="rounded-full border border-white/10 bg-white/[0.04] p-2 text-white/55 transition hover:text-white"
+                  aria-label="Exit demo tour"
+                >
+                  <X size={15} strokeWidth={1.8} />
+                </button>
+              </div>
+              <p className="mt-3 text-sm leading-6 text-white/60">
+                {currentDemoStep.description}
+              </p>
+              <div className="mt-4 flex items-center justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={showPreviousDemoStep}
+                  disabled={demoIndex === 0}
+                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-medium uppercase tracking-[0.16em] text-white/60 transition hover:text-white disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  <SkipBack size={14} strokeWidth={1.8} />
+                  Previous
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDemoPaused((currentValue) => !currentValue)}
+                  className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.05] px-3 py-2 text-xs font-medium uppercase tracking-[0.16em] text-white/60 transition hover:text-white"
+                >
+                  {demoPaused ? (
+                    <Play size={14} strokeWidth={1.8} />
+                  ) : (
+                    <Pause size={14} strokeWidth={1.8} />
+                  )}
+                  {demoPaused ? "Resume" : "Pause"}
+                </button>
+                <button
+                  type="button"
+                  onClick={showNextDemoStep}
+                  disabled={demoIndex >= demoSteps.length - 1}
+                  className="inline-flex items-center gap-2 rounded-full border border-cyan-100/25 bg-cyan-100/10 px-3 py-2 text-xs font-medium uppercase tracking-[0.16em] text-cyan-50 transition hover:bg-cyan-100/15 disabled:cursor-not-allowed disabled:opacity-45"
+                >
+                  Next
+                  <SkipForward size={14} strokeWidth={1.8} />
+                </button>
+              </div>
+            </motion.div>
+          ) : null}
 
           {comparisonMode ? (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
-              className="grid h-full grid-cols-1 gap-2 pt-40 md:grid-cols-2 md:pt-32 xl:pt-28"
+              className="grid h-full grid-cols-1 gap-2 pt-48 md:grid-cols-2 md:pt-40 xl:pt-36"
             >
               <div className="relative min-h-[360px] overflow-hidden border-t border-white/10 md:border-r md:border-t-0">
-                <div className="absolute left-3 top-48 z-40 rounded-full border border-cyan-100/25 bg-black/70 px-3 py-1.5 text-xs font-medium uppercase tracking-[0.22em] text-cyan-50 backdrop-blur-xl md:top-44 xl:top-40">
+                <div className="absolute left-3 top-56 z-40 rounded-full border border-cyan-100/25 bg-black/70 px-3 py-1.5 text-xs font-medium uppercase tracking-[0.22em] text-cyan-50 backdrop-blur-xl md:top-52 xl:top-48">
                   Scenario A
                 </div>
                 <div className="absolute left-3 right-3 top-3 z-30">
@@ -540,6 +966,9 @@ export default function MapPage() {
                   focusRequestId={focusRequestId}
                   areaRisk={areaRisk}
                   regionalMapping={regionalMapping}
+                  localUrbanCell={localUrbanCell}
+                  climateOverlayEnabled={climateOverlayEnabled}
+                  climateOverlays={scenarioAClimateOverlays}
                   syncedView={syncedView}
                   onViewChange={syncComparisonView}
                   onSelectCity={selectCity}
@@ -547,7 +976,7 @@ export default function MapPage() {
                 />
               </div>
               <div className="relative min-h-[360px] overflow-hidden border-t border-white/10 md:border-t-0">
-                <div className="absolute left-3 top-48 z-40 rounded-full border border-fuchsia-100/25 bg-black/70 px-3 py-1.5 text-xs font-medium uppercase tracking-[0.22em] text-fuchsia-50 backdrop-blur-xl md:top-44 xl:top-40">
+                <div className="absolute left-3 top-56 z-40 rounded-full border border-fuchsia-100/25 bg-black/70 px-3 py-1.5 text-xs font-medium uppercase tracking-[0.22em] text-fuchsia-50 backdrop-blur-xl md:top-52 xl:top-48">
                   Scenario B
                 </div>
                 <div className="absolute left-3 right-3 top-3 z-30">
@@ -567,6 +996,9 @@ export default function MapPage() {
                   focusRequestId={focusRequestId}
                   areaRisk={areaRisk}
                   regionalMapping={regionalMapping}
+                  localUrbanCell={localUrbanCell}
+                  climateOverlayEnabled={climateOverlayEnabled}
+                  climateOverlays={scenarioBClimateOverlays}
                   syncedView={syncedView}
                   onViewChange={syncComparisonView}
                   onSelectCity={selectCity}
@@ -582,6 +1014,9 @@ export default function MapPage() {
               focusRequestId={focusRequestId}
               areaRisk={areaRisk}
               regionalMapping={regionalMapping}
+              localUrbanCell={localUrbanCell}
+              climateOverlayEnabled={climateOverlayEnabled}
+              climateOverlays={singleClimateOverlays}
               onViewChange={setLastMapView}
               onSelectCity={selectCity}
               onInspectArea={inspectArea}
@@ -607,7 +1042,13 @@ export default function MapPage() {
             inspectedScenario={inspectedScenario}
             onInspectedScenarioChange={setInspectedScenario}
             comparisonMetrics={comparisonMetrics}
+            scenarioA={scenarioASnapshot}
+            scenarioB={scenarioBSnapshot}
             regionalMapping={regionalMapping}
+            localUrbanCell={localUrbanCell}
+            activeOverlays={[...panelActiveOverlays]}
+            activeTab={activePanelTab}
+            onActiveTabChange={setActivePanelTab}
           />
         </div>
 

@@ -1,10 +1,12 @@
 "use client";
 
 import { motion } from "framer-motion";
+import type { Season } from "@/lib/climateOverlaySimulation";
 
 export interface ComparisonScenarioConfig {
   year: number;
   warming: number;
+  season: Season;
   overlays: Record<string, boolean>;
 }
 
@@ -84,6 +86,25 @@ export default function ComparisonScenarioControls({
           className="w-full accent-cyan-200"
         />
         <span className="text-xs text-white/35">+4</span>
+      </div>
+
+      <div className="mt-3 grid grid-cols-4 gap-1.5">
+        {(["Spring", "Summer", "Monsoon", "Winter"] as const).map(
+          (seasonOption) => (
+            <button
+              key={seasonOption}
+              type="button"
+              onClick={() => onChange({ ...scenario, season: seasonOption })}
+              className={`rounded-md border px-2 py-1.5 text-[11px] transition ${
+                scenario.season === seasonOption
+                  ? "border-cyan-100/45 bg-cyan-100/15 text-white"
+                  : "border-white/10 bg-white/[0.045] text-white/50 hover:text-white"
+              }`}
+            >
+              {seasonOption}
+            </button>
+          ),
+        )}
       </div>
 
       <div className="mt-3 flex flex-wrap gap-1.5">

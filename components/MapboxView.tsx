@@ -1,12 +1,19 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import mapboxgl from "mapbox-gl";
+import mapboxgl, { type ExpressionSpecification } from "mapbox-gl";
 import AreaRiskInspector, {
   type AreaRiskData,
 } from "@/components/AreaRiskInspector";
+import ClimateOverlay from "@/components/ClimateOverlay";
 import type { MapCityNodeData } from "@/components/MapCityNode";
 import type { RegionalMappingData } from "@/components/regionalTypes";
+import {
+  createRegionBoundary,
+  createRegionClimateSurface,
+  type ClimateOverlayRenderModel,
+} from "@/lib/climateOverlaySimulation";
+import type { LocalUrbanCellData } from "@/lib/localCellSimulation";
 
 interface MapboxViewProps {
   mapId?: string;
@@ -16,13 +23,31 @@ interface MapboxViewProps {
   focusRequestId: number;
   areaRisk: AreaRiskData | null;
   regionalMapping: RegionalMappingData | null;
+  localUrbanCell: LocalUrbanCellData | null;
+  climateOverlayEnabled: boolean;
+  climateOverlays: ClimateOverlayRenderModel[];
   onSelectCity: (city: MapCityNodeData) => void;
-  onInspectArea: (position: { x: number; y: number }) => void;
+  onInspectArea: (position: {
+    x: number;
+    y: number;
+    latitude: number;
+    longitude: number;
+  }) => void;
   syncedView?: SyncedMapView | null;
   onViewChange?: (view: SyncedMapView) => void;
 }
 
 const MAPBOX_STYLE = "mapbox://styles/mapbox/dark-v11";
+const REGION_CLIMATE_SOURCE_ID = "future-cities-region-climate-surface";
+const REGION_BOUNDARY_SOURCE_ID = "future-cities-region-boundary";
+const REGION_CLIMATE_LAYER_ID = "future-cities-region-climate-fill";
+const REGION_BOUNDARY_LAYER_ID = "future-cities-region-boundary-line";
+const LEGACY_CLIMATE_LAYER_IDS = [
+  "future-cities-climate-surface-fill",
+  "future-cities-climate-surface-line",
+  "future-cities-climate-surface-heatmap",
+];
+const LEGACY_CLIMATE_SOURCE_IDS = ["future-cities-climate-surface"];
 
 export interface SyncedMapView {
   center: [number, number];
@@ -30,6 +55,247 @@ export interface SyncedMapView {
   bearing: number;
   pitch: number;
   sourceId: string;
+}
+
+function getClimateSurfaceColor(
+  kind: ClimateOverlayRenderModel["kind"],
+  colorProperty: ClimateOverlayRenderModel["colorProperty"],
+  intensity: number,
+): ExpressionSpecification {
+  const riskValue = ["*", ["get", colorProperty], intensity];
+
+  if (kind === "flood") {
+    return [
+      "interpolate",
+      ["linear"],
+      riskValue,
+      0,
+      "rgba(34,211,238,0.05)",
+      42,
+      "rgba(34,211,238,0.26)",
+      68,
+      "rgba(37,99,235,0.42)",
+      98,
+      "rgba(88,28,135,0.56)",
+    ] as ExpressionSpecification;
+  }
+
+  if (kind === "comfort") {
+    return [
+      "interpolate",
+      ["linear"],
+      riskValue,
+      0,
+      "rgba(239,68,68,0.28)",
+      42,
+      "rgba(250,204,21,0.36)",
+      68,
+      "rgba(20,184,166,0.42)",
+      100,
+      "rgba(34,197,94,0.48)",
+    ] as ExpressionSpecification;
+  }
+
+  if (kind === "livability") {
+    return [
+      "interpolate",
+      ["linear"],
+      ["*", ["-", 100, ["get", "livability"]], intensity],
+      0,
+      "rgba(20,184,166,0.18)",
+      42,
+      "rgba(250,204,21,0.32)",
+      68,
+      "rgba(249,115,22,0.44)",
+      96,
+      "rgba(127,29,29,0.58)",
+    ] as ExpressionSpecification;
+  }
+
+  return [
+    "interpolate",
+    ["linear"],
+    riskValue,
+    0,
+    "rgba(56,189,248,0.06)",
+    44,
+    "rgba(250,204,21,0.28)",
+    62,
+    "rgba(249,115,22,0.42)",
+    82,
+    "rgba(220,38,38,0.54)",
+    112,
+    "rgba(69,10,10,0.68)",
+  ] as ExpressionSpecification;
+}
+
+function ensureRegionClimateLayers(
+  map: mapboxgl.Map,
+  regionalMapping: RegionalMappingData,
+  activeOverlay?: ClimateOverlayRenderModel,
+) {
+  removeLegacyClimateLayers(map);
+
+  const climateSource = map.getSource(REGION_CLIMATE_SOURCE_ID) as
+    | mapboxgl.GeoJSONSource
+    | undefined;
+  const boundarySource = map.getSource(REGION_BOUNDARY_SOURCE_ID) as
+    | mapboxgl.GeoJSONSource
+    | undefined;
+  const climateSurface = createRegionClimateSurface(
+    regionalMapping,
+    activeOverlay,
+  );
+  const boundary = createRegionBoundary(regionalMapping);
+
+  if (climateSource) {
+    climateSource.setData(climateSurface);
+  } else {
+    map.addSource(REGION_CLIMATE_SOURCE_ID, {
+      type: "geojson",
+      data: climateSurface,
+    });
+  }
+
+  if (boundarySource) {
+    boundarySource.setData(boundary);
+  } else {
+    map.addSource(REGION_BOUNDARY_SOURCE_ID, {
+      type: "geojson",
+      data: boundary,
+    });
+  }
+
+  if (!map.getLayer(REGION_CLIMATE_LAYER_ID)) {
+    const firstSymbolLayerId = map
+      .getStyle()
+      .layers?.find((layer) => layer.type === "symbol")?.id;
+
+    map.addLayer(
+      {
+        id: REGION_CLIMATE_LAYER_ID,
+        type: "fill",
+        source: REGION_CLIMATE_SOURCE_ID,
+        layout: { visibility: "none" },
+        paint: {
+          "fill-antialias": true,
+          "fill-color": [
+            "interpolate",
+            ["linear"],
+            ["get", "heat"],
+            0,
+            "rgba(56,189,248,0.06)",
+            44,
+            "rgba(250,204,21,0.28)",
+            62,
+            "rgba(249,115,22,0.42)",
+            82,
+            "rgba(220,38,38,0.54)",
+            112,
+            "rgba(69,10,10,0.68)",
+          ],
+          "fill-opacity": 0,
+        },
+      },
+      firstSymbolLayerId,
+    );
+  }
+
+  if (!map.getLayer(REGION_BOUNDARY_LAYER_ID)) {
+    map.addLayer({
+      id: REGION_BOUNDARY_LAYER_ID,
+      type: "line",
+      source: REGION_BOUNDARY_SOURCE_ID,
+      layout: { visibility: "none" },
+      paint: {
+        "line-color": "rgba(165,243,252,0.86)",
+        "line-opacity": 0,
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          2,
+          1,
+          6,
+          2.2,
+        ],
+        "line-blur": 0.8,
+      },
+    });
+  }
+}
+
+function removeLegacyClimateLayers(map: mapboxgl.Map) {
+  LEGACY_CLIMATE_LAYER_IDS.forEach((layerId) => {
+    if (map.getLayer(layerId)) {
+      map.removeLayer(layerId);
+    }
+  });
+
+  LEGACY_CLIMATE_SOURCE_IDS.forEach((sourceId) => {
+    if (map.getSource(sourceId)) {
+      map.removeSource(sourceId);
+    }
+  });
+}
+
+function getClimateSurfaceOpacity(opacity: number): ExpressionSpecification {
+  return [
+    "*",
+    opacity,
+    ["coalesce", ["get", "alpha"], 0.5],
+  ] as ExpressionSpecification;
+}
+
+function applyClimateSurface(
+  map: mapboxgl.Map,
+  climateOverlayEnabled: boolean,
+  activeOverlay: ClimateOverlayRenderModel | undefined,
+  regionalMapping: RegionalMappingData | null,
+) {
+  if (!regionalMapping) {
+    removeLegacyClimateLayers(map);
+
+    if (map.getLayer(REGION_CLIMATE_LAYER_ID)) {
+      map.setLayoutProperty(REGION_CLIMATE_LAYER_ID, "visibility", "none");
+      map.setPaintProperty(REGION_CLIMATE_LAYER_ID, "fill-opacity", 0);
+    }
+
+    if (map.getLayer(REGION_BOUNDARY_LAYER_ID)) {
+      map.setLayoutProperty(REGION_BOUNDARY_LAYER_ID, "visibility", "none");
+      map.setPaintProperty(REGION_BOUNDARY_LAYER_ID, "line-opacity", 0);
+    }
+
+    return;
+  }
+
+  ensureRegionClimateLayers(map, regionalMapping, activeOverlay);
+
+  if (!climateOverlayEnabled || !activeOverlay) {
+    map.setLayoutProperty(REGION_CLIMATE_LAYER_ID, "visibility", "none");
+    map.setPaintProperty(REGION_CLIMATE_LAYER_ID, "fill-opacity", 0);
+    map.setLayoutProperty(REGION_BOUNDARY_LAYER_ID, "visibility", "none");
+    map.setPaintProperty(REGION_BOUNDARY_LAYER_ID, "line-opacity", 0);
+    return;
+  }
+
+  map.setLayoutProperty(REGION_CLIMATE_LAYER_ID, "visibility", "visible");
+  map.setPaintProperty(
+    REGION_CLIMATE_LAYER_ID,
+    "fill-color",
+    getClimateSurfaceColor(
+      activeOverlay.kind,
+      activeOverlay.colorProperty,
+      activeOverlay.intensity,
+    ),
+  );
+  map.setPaintProperty(
+    REGION_CLIMATE_LAYER_ID,
+    "fill-opacity",
+    getClimateSurfaceOpacity(activeOverlay.opacity),
+  );
+  map.setLayoutProperty(REGION_BOUNDARY_LAYER_ID, "visibility", "visible");
+  map.setPaintProperty(REGION_BOUNDARY_LAYER_ID, "line-opacity", 0.72);
 }
 
 export default function MapboxView({
@@ -40,6 +306,9 @@ export default function MapboxView({
   focusRequestId,
   areaRisk,
   regionalMapping,
+  localUrbanCell,
+  climateOverlayEnabled,
+  climateOverlays,
   onSelectCity,
   onInspectArea,
   syncedView,
@@ -49,6 +318,7 @@ export default function MapboxView({
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
   const regionalMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const localCellMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const hasFitInitialBoundsRef = useRef(false);
   const isApplyingSyncedViewRef = useRef(false);
   const hasMapboxToken = Boolean(process.env.NEXT_PUBLIC_MAPBOX_TOKEN);
@@ -69,6 +339,7 @@ export default function MapboxView({
       zoom: 1.55,
       minZoom: 1.1,
       maxZoom: 8,
+      projection: "globe",
     });
 
     map.addControl(
@@ -95,15 +366,15 @@ export default function MapboxView({
         resizeMap();
         map.fitBounds(
           [
-            [-13, 5],
-            [88, 58],
+            [-18, -8],
+            [105, 64],
           ],
           {
             padding: {
-              top: Math.min(90, height * 0.14),
-              bottom: Math.min(80, height * 0.12),
-              left: Math.min(90, width * 0.12),
-              right: Math.min(90, width * 0.12),
+              top: Math.min(70, height * 0.1),
+              bottom: Math.min(34, height * 0.05),
+              left: Math.min(42, width * 0.055),
+              right: Math.min(42, width * 0.055),
             },
             duration: 0,
           },
@@ -115,6 +386,13 @@ export default function MapboxView({
     };
 
     map.once("load", () => {
+      map.setFog({
+        color: "rgb(3, 8, 18)",
+        "high-color": "rgb(12, 55, 72)",
+        "horizon-blend": 0.08,
+        "space-color": "rgb(0, 2, 8)",
+        "star-intensity": 0.08,
+      });
       window.requestAnimationFrame(fitMapToCities);
     });
 
@@ -141,6 +419,8 @@ export default function MapboxView({
       onInspectArea({
         x: Math.min(100, Math.max(0, x)),
         y: Math.min(100, Math.max(0, y)),
+        latitude: event.lngLat.lat,
+        longitude: event.lngLat.lng,
       });
     });
 
@@ -170,11 +450,36 @@ export default function MapboxView({
       markersRef.current = [];
       regionalMarkerRef.current?.remove();
       regionalMarkerRef.current = null;
+      localCellMarkerRef.current?.remove();
+      localCellMarkerRef.current = null;
       map.remove();
       mapRef.current = null;
       hasFitInitialBoundsRef.current = false;
     };
   }, [mapId, onInspectArea, onViewChange]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+
+    if (!map) {
+      return;
+    }
+
+    const updateClimateSurface = () => {
+      applyClimateSurface(
+        map,
+        climateOverlayEnabled,
+        climateOverlays[0],
+        regionalMapping,
+      );
+    };
+
+    if (map.loaded()) {
+      updateClimateSurface();
+    } else {
+      map.once("load", updateClimateSurface);
+    }
+  }, [climateOverlayEnabled, climateOverlays, regionalMapping]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -278,6 +583,39 @@ export default function MapboxView({
 
   useEffect(() => {
     const map = mapRef.current;
+
+    if (!map) {
+      return;
+    }
+
+    localCellMarkerRef.current?.remove();
+    localCellMarkerRef.current = null;
+
+    if (!localUrbanCell) {
+      return;
+    }
+
+    const markerElement = document.createElement("div");
+    markerElement.className = "future-local-cell-marker";
+
+    const haloElement = document.createElement("span");
+    haloElement.className = "future-local-cell-marker__halo";
+
+    const coreElement = document.createElement("span");
+    coreElement.className = "future-local-cell-marker__core";
+
+    markerElement.append(haloElement, coreElement);
+
+    localCellMarkerRef.current = new mapboxgl.Marker({
+      element: markerElement,
+      anchor: "center",
+    })
+      .setLngLat([localUrbanCell.longitude, localUrbanCell.latitude])
+      .addTo(map);
+  }, [localUrbanCell]);
+
+  useEffect(() => {
+    const map = mapRef.current;
     const city = cities.find(
       (currentCity) => currentCity.name === focusedCityName,
     );
@@ -319,12 +657,18 @@ export default function MapboxView({
       <div ref={mapContainerRef} className="absolute inset-0 h-full w-full" />
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,transparent_0%,rgba(0,0,0,0.18)_58%,rgba(0,0,0,0.72)_100%)]"
+        className="pointer-events-none absolute inset-0 z-20 bg-[radial-gradient(circle_at_50%_45%,transparent_0%,rgba(0,0,0,0.18)_58%,rgba(0,0,0,0.72)_100%)]"
       />
-      <div
-        aria-hidden="true"
-        className="pointer-events-none absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.035)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.035)_1px,transparent_1px)] [background-size:72px_72px] opacity-45"
+      <ClimateOverlay
+        enabled={climateOverlayEnabled && Boolean(regionalMapping)}
+        overlays={climateOverlays}
+        regionLabel={regionalMapping?.mappedRegion}
       />
+      {climateOverlayEnabled && !regionalMapping ? (
+        <div className="pointer-events-none absolute bottom-24 right-4 z-30 w-64 rounded-lg border border-cyan-100/15 bg-black/60 p-3 text-sm leading-5 text-cyan-50/70 shadow-[0_18px_60px_rgba(0,0,0,0.45)] backdrop-blur-2xl">
+          Search a place to view regional climate overlay.
+        </div>
+      ) : null}
 
       {!hasMapboxToken ? (
         <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/70 p-6 text-center backdrop-blur-xl">

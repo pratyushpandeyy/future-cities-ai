@@ -4,6 +4,7 @@ export interface RegionalMappingData {
   climateZone: string;
   confidence: "Medium" | "High";
   nearestGridCell: string;
+  boundarySource: "simulated";
   longitude: number;
   latitude: number;
 }
