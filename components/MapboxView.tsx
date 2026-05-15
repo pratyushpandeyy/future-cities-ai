@@ -9,10 +9,10 @@ import ClimateOverlay from "@/components/ClimateOverlay";
 import type { MapCityNodeData } from "@/components/MapCityNode";
 import type { RegionalMappingData } from "@/components/regionalTypes";
 import {
-  createRegionBoundary,
   createRegionClimateSurface,
   type ClimateOverlayRenderModel,
 } from "@/lib/climateOverlaySimulation";
+import { getRegionBoundary } from "@/lib/api/mockClient";
 import type { LocalUrbanCellData } from "@/lib/localCellSimulation";
 
 interface MapboxViewProps {
@@ -146,7 +146,7 @@ function ensureRegionClimateLayers(
     regionalMapping,
     activeOverlay,
   );
-  const boundary = createRegionBoundary(regionalMapping);
+  const boundary = getRegionBoundary(regionalMapping);
 
   if (climateSource) {
     climateSource.setData(climateSurface);

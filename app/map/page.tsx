@@ -18,121 +18,30 @@ import SearchScenarioBar, {
   type SearchResult,
 } from "@/components/SearchScenarioBar";
 import {
-  createKnownRegionalMapping,
   generateClimateOverlays,
   type Season,
 } from "@/lib/climateOverlaySimulation";
+import {
+  compareScenarios,
+  getLocalAreaRisk,
+  getOutdoorComfort,
+  getScenarioScore,
+  searchLocation,
+} from "@/lib/api/mockClient";
+import {
+  climateLayerNames,
+  knownCityNodes,
+  predictedWarmingByYear,
+  scenarioYears,
+} from "@/lib/api/mockData";
 import {
   simulateLocalUrbanCell,
   type LocalUrbanCellData,
 } from "@/lib/localCellSimulation";
 
-const cityNodes: MapCityNodeData[] = [
-  {
-    name: "Mumbai",
-    region: "Arabian Sea megacity corridor",
-    longitude: 72.8777,
-    latitude: 19.076,
-    x: 69,
-    y: 57,
-    livabilityScore: 82,
-    heatRisk: "High",
-    floodRisk: "Elevated",
-    greenCover: "14%",
-    futureSummary:
-      "Dense coastal districts require sharper flood buffers, cooler streets, and faster multimodal access by mid-century.",
-    sportsCultureImpact:
-      "Stadium precincts and film districts become high-value civic cooling zones during extreme heat windows.",
-    accent: "bg-cyan-400/20",
-  },
-  {
-    name: "Bangalore",
-    region: "Deccan innovation plateau",
-    longitude: 77.5946,
-    latitude: 12.9716,
-    x: 68,
-    y: 68,
-    livabilityScore: 88,
-    heatRisk: "Medium",
-    floodRisk: "Moderate",
-    greenCover: "22%",
-    futureSummary:
-      "Distributed tech neighborhoods benefit from restored lake systems, shaded mobility, and mixed-use growth.",
-    sportsCultureImpact:
-      "Cricket, esports, and live music corridors strengthen nighttime activity around transit-linked districts.",
-    accent: "bg-emerald-400/20",
-  },
-  {
-    name: "Madrid",
-    region: "Iberian civic core",
-    longitude: -3.7038,
-    latitude: 40.4168,
-    x: 42,
-    y: 39,
-    livabilityScore: 91,
-    heatRisk: "Rising",
-    floodRisk: "Low",
-    greenCover: "31%",
-    futureSummary:
-      "Heat-adapted plazas, tree canopies, and low-emission mobility keep central districts highly livable.",
-    sportsCultureImpact:
-      "Football, museums, and public squares anchor a resilient cultural economy through hotter summers.",
-    accent: "bg-rose-400/20",
-  },
-  {
-    name: "Istanbul",
-    region: "Bosphorus cultural bridge",
-    longitude: 28.9784,
-    latitude: 41.0082,
-    x: 51,
-    y: 43,
-    livabilityScore: 79,
-    heatRisk: "Medium",
-    floodRisk: "Variable",
-    greenCover: "18%",
-    futureSummary:
-      "Waterfront adaptation and seismic-aware regeneration shape future livability across historic districts.",
-    sportsCultureImpact:
-      "Match-day mobility, bazaars, and waterfront venues intensify the need for crowd-aware climate planning.",
-    accent: "bg-amber-300/20",
-  },
-  {
-    name: "Manchester",
-    region: "Northern UK regeneration zone",
-    longitude: -2.2426,
-    latitude: 53.4808,
-    x: 40,
-    y: 29,
-    livabilityScore: 86,
-    heatRisk: "Low",
-    floodRisk: "Moderate",
-    greenCover: "27%",
-    futureSummary:
-      "Canal corridors, media clusters, and retrofitted industrial zones support compact low-carbon growth.",
-    sportsCultureImpact:
-      "Football, music, and media venues drive visitor flows that benefit from greener streets and rain resilience.",
-    accent: "bg-sky-300/20",
-  },
-];
-
-const layerNames = [
-  "Heat Risk",
-  "Flood Risk",
-  "Outdoor Comfort",
-  "Air Quality",
-  "Green Cover",
-  "Livability Stress",
-  "Water Stress",
-  "Culture/Sports Lens",
-] as const;
-
-const years = [2025, 2030, 2040, 2050];
-const predictedWarmingByYear: Record<number, number> = {
-  2025: 1.4,
-  2030: 1.7,
-  2040: 2.1,
-  2050: 2.7,
-};
+const cityNodes = knownCityNodes;
+const layerNames = climateLayerNames;
+const years = scenarioYears;
 
 type LayerState = Record<(typeof layerNames)[number], boolean>;
 type InspectedScenario = "A" | "B";
@@ -253,238 +162,6 @@ const demoSteps: DemoStep[] = [
   },
 ];
 
-function getRiskLabel(value: number) {
-  if (value >= 76) {
-    return "High";
-  }
-
-  if (value >= 52) {
-    return "Elevated";
-  }
-
-  if (value >= 30) {
-    return "Moderate";
-  }
-
-  return "Low";
-}
-
-function getComfortLabel(value: number) {
-  if (value >= 72) {
-    return "High";
-  }
-
-  if (value >= 52) {
-    return "Moderate";
-  }
-
-  return "Low";
-}
-
-function getRiskScoreFromLabel(label: string) {
-  if (label === "High") {
-    return 78;
-  }
-
-  if (label === "Elevated" || label === "Rising") {
-    return 62;
-  }
-
-  if (label === "Moderate" || label === "Variable" || label === "Medium") {
-    return 42;
-  }
-
-  return 22;
-}
-
-function getGreenCoverScore(value: string) {
-  const parsedValue = Number.parseInt(value.replace("%", ""), 10);
-
-  return Number.isFinite(parsedValue) ? parsedValue : 20;
-}
-
-function formatGreenCover(value: number) {
-  return `${Math.min(48, Math.max(4, Math.round(value)))}%`;
-}
-
-function createAreaRisk(x: number, y: number): AreaRiskData {
-  const roundedX = Math.round(x * 10) / 10;
-  const roundedY = Math.round(y * 10) / 10;
-  const localHeatIndex = Math.round(48 + roundedY * 0.34 + roundedX * 0.12);
-  const floodScore = Math.round(
-    24 + roundedY * 0.42 + Math.abs(50 - roundedX) * 0.18,
-  );
-  const greenCoverScore = Math.max(
-    8,
-    Math.round(42 - roundedY * 0.22 + (100 - roundedX) * 0.08),
-  );
-  const walkabilityScore = Math.max(
-    18,
-    Math.round(78 - Math.abs(roundedX - 52) * 0.28 - roundedY * 0.18),
-  );
-  const overallRiskScore = Math.round(
-    localHeatIndex * 0.45 + floodScore * 0.35 + (100 - walkabilityScore) * 0.2,
-  );
-
-  return {
-    x: roundedX,
-    y: roundedY,
-    localHeatIndex,
-    floodExposure: getRiskLabel(floodScore),
-    greenCoverProxy: `${greenCoverScore}%`,
-    walkabilityComfort: getComfortLabel(walkabilityScore),
-    overallLocalRisk: getRiskLabel(overallRiskScore),
-    explanation:
-      "This area shows elevated future heat exposure due to dense built form and limited cooling cover.",
-  };
-}
-
-function createScenarioCity(
-  city: MapCityNodeData,
-  warming: number,
-  localCell?: LocalUrbanCellData | null,
-): MapCityNodeData {
-  const heatPressure = Math.max(0, warming - 1);
-  const livabilityScore = Math.max(
-    42,
-    Math.round(
-      city.livabilityScore -
-        heatPressure * 6 +
-        (localCell?.livabilityAdjustment ?? 0),
-    ),
-  );
-  const heatScore =
-    getRiskScoreFromLabel(city.heatRisk) +
-    heatPressure * 14 +
-    (localCell?.heatRiskAdjustment ?? 0);
-  const floodScore =
-    getRiskScoreFromLabel(city.floodRisk) +
-    (localCell?.floodRiskAdjustment ?? 0);
-
-  return {
-    ...city,
-    livabilityScore,
-    heatRisk: getRiskLabel(heatScore),
-    floodRisk: getRiskLabel(floodScore),
-    greenCover: formatGreenCover(
-      getGreenCoverScore(city.greenCover) +
-        (localCell?.greenCoverAdjustment ?? 0),
-    ),
-  };
-}
-
-function getQueryHash(value: string) {
-  return value
-    .trim()
-    .toLowerCase()
-    .split("")
-    .reduce((total, character) => total + character.charCodeAt(0), 0);
-}
-
-function createRegionalMapping(
-  query: string,
-  center: [number, number],
-): RegionalMappingData {
-  const hash = getQueryHash(query);
-  const climateZones = [
-    "Tropical urban belt",
-    "Semi-arid transition zone",
-    "Temperate maritime cell",
-    "Humid subtropical corridor",
-  ];
-  const longitude = Number(
-    (center[0] + ((hash % 17) - 8) * 0.08).toFixed(4),
-  );
-  const latitude = Number(
-    (center[1] + ((hash % 13) - 6) * 0.08).toFixed(4),
-  );
-
-  return {
-    inputLocation: query.trim(),
-    mappedRegion: `Simulated Region ${String.fromCharCode(65 + (hash % 6))}`,
-    climateZone: climateZones[hash % climateZones.length],
-    confidence: hash % 3 === 0 ? "Medium" : "High",
-    nearestGridCell: `FC-GRID-${(1000 + (hash % 9000)).toString()}`,
-    boundarySource: "simulated",
-    longitude,
-    latitude,
-  };
-}
-
-function createRegionalCity(mapping: RegionalMappingData): MapCityNodeData {
-  const hash = getQueryHash(mapping.inputLocation);
-
-  return {
-    name: mapping.inputLocation,
-    region: mapping.mappedRegion,
-    longitude: mapping.longitude,
-    latitude: mapping.latitude,
-    x: 50,
-    y: 50,
-    livabilityScore: Math.max(58, 78 - (hash % 18)),
-    heatRisk: hash % 2 === 0 ? "Elevated" : "Moderate",
-    floodRisk: hash % 3 === 0 ? "Elevated" : "Moderate",
-    greenCover: `${18 + (hash % 16)}%`,
-    futureSummary:
-      "Regional extrapolation estimates future comfort and climate pressure from nearby simulated climate cells.",
-    sportsCultureImpact:
-      "Local outdoor routines, neighborhood sport, and high-street culture become more sensitive to heat timing and cooling access.",
-    accent: "bg-fuchsia-400/20",
-  };
-}
-
-function getOutdoorComfort(
-  warming: number,
-  localCell?: LocalUrbanCellData | null,
-) {
-  const comfortScore = Math.max(
-    18,
-    Math.round(86 - warming * 15 + (localCell?.outdoorComfortAdjustment ?? 0)),
-  );
-
-  return getComfortLabel(comfortScore);
-}
-
-function createComparisonMetrics(
-  city: MapCityNodeData,
-  scenarioA: ComparisonScenarioConfig,
-  scenarioB: ComparisonScenarioConfig,
-  localCell?: LocalUrbanCellData | null,
-) {
-  const cityA = createScenarioCity(city, scenarioA.warming, localCell);
-  const cityB = createScenarioCity(city, scenarioB.warming, localCell);
-  const heatIncrease = Math.max(
-    0,
-    Math.round((scenarioB.warming - scenarioA.warming) * 16),
-  );
-  const livabilityDecline = Math.max(
-    0,
-    cityA.livabilityScore - cityB.livabilityScore,
-  );
-  const localComfortAdjustment = localCell?.outdoorComfortAdjustment ?? 0;
-  const comfortA = Math.max(
-    18,
-    Math.round(86 - scenarioA.warming * 15 + localComfortAdjustment),
-  );
-  const comfortB = Math.max(
-    18,
-    Math.round(86 - scenarioB.warming * 15 + localComfortAdjustment),
-  );
-  const outdoorComfortChange = Math.max(0, comfortA - comfortB);
-
-  return {
-    heatIncrease,
-    livabilityDecline,
-    outdoorComfortChange,
-    scientificMetric: `Wet bulb anomaly +${Math.max(
-      0,
-      scenarioB.warming - scenarioA.warming + 0.6,
-    ).toFixed(1)}C`,
-    humanTranslation:
-      "Summer nighttime cooling becomes significantly weaker, increasing discomfort during heatwaves.",
-  };
-}
-
 export default function MapPage() {
   const [selectedCity, setSelectedCity] = useState<MapCityNodeData>(
     cityNodes[0],
@@ -522,66 +199,66 @@ export default function MapPage() {
   const predictedWarming = predictedWarmingByYear[selectedYear];
   const activeWarming =
     scenarioMode === "predicted" ? predictedWarming : manualWarming;
-  const scenarioCity = createScenarioCity(
-    selectedCity,
-    activeWarming,
+  const scenarioScore = getScenarioScore({
+    city: selectedCity,
+    warming: activeWarming,
     localUrbanCell,
-  );
-  const outdoorComfort = getOutdoorComfort(activeWarming, localUrbanCell);
+  });
+  const scenarioCity = scenarioScore.city;
+  const outdoorComfort = scenarioScore.outdoorComfort;
   const inspectedScenarioConfig =
     inspectedScenario === "A" ? scenarioA : scenarioB;
-  const panelCity = comparisonMode
-    ? createScenarioCity(
-        selectedCity,
-        inspectedScenarioConfig.warming,
-        localUrbanCell,
-      )
-    : scenarioCity;
+  const inspectedScenarioScore = getScenarioScore({
+    city: selectedCity,
+    warming: inspectedScenarioConfig.warming,
+    localUrbanCell,
+  });
+  const panelCity = comparisonMode ? inspectedScenarioScore.city : scenarioCity;
   const panelYear = comparisonMode ? inspectedScenarioConfig.year : selectedYear;
   const panelWarming = comparisonMode
     ? inspectedScenarioConfig.warming
     : activeWarming;
   const panelOutdoorComfort = comparisonMode
-    ? getOutdoorComfort(inspectedScenarioConfig.warming, localUrbanCell)
+    ? inspectedScenarioScore.outdoorComfort
     : outdoorComfort;
   const panelActiveOverlays = comparisonMode
     ? layerNames.filter((layerName) => inspectedScenarioConfig.overlays[layerName])
     : activeLayers;
-  const comparisonMetrics = createComparisonMetrics(
-    selectedCity,
+  const comparisonMetrics = compareScenarios({
+    city: selectedCity,
     scenarioA,
     scenarioB,
     localUrbanCell,
-  );
-  const scenarioACity = createScenarioCity(
-    selectedCity,
-    scenarioA.warming,
+  });
+  const scenarioAScore = getScenarioScore({
+    city: selectedCity,
+    warming: scenarioA.warming,
     localUrbanCell,
-  );
-  const scenarioBCity = createScenarioCity(
-    selectedCity,
-    scenarioB.warming,
+  });
+  const scenarioBScore = getScenarioScore({
+    city: selectedCity,
+    warming: scenarioB.warming,
     localUrbanCell,
-  );
+  });
   const scenarioASnapshot = {
     label: "Scenario A",
     year: scenarioA.year,
     warming: scenarioA.warming,
-    heatRisk: scenarioACity.heatRisk,
-    floodRisk: scenarioACity.floodRisk,
-    greenCover: scenarioACity.greenCover,
-    livabilityScore: scenarioACity.livabilityScore,
-    outdoorComfort: getOutdoorComfort(scenarioA.warming, localUrbanCell),
+    heatRisk: scenarioAScore.city.heatRisk,
+    floodRisk: scenarioAScore.city.floodRisk,
+    greenCover: scenarioAScore.city.greenCover,
+    livabilityScore: scenarioAScore.city.livabilityScore,
+    outdoorComfort: scenarioAScore.outdoorComfort,
   };
   const scenarioBSnapshot = {
     label: "Scenario B",
     year: scenarioB.year,
     warming: scenarioB.warming,
-    heatRisk: scenarioBCity.heatRisk,
-    floodRisk: scenarioBCity.floodRisk,
-    greenCover: scenarioBCity.greenCover,
-    livabilityScore: scenarioBCity.livabilityScore,
-    outdoorComfort: getOutdoorComfort(scenarioB.warming, localUrbanCell),
+    heatRisk: scenarioBScore.city.heatRisk,
+    floodRisk: scenarioBScore.city.floodRisk,
+    greenCover: scenarioBScore.city.greenCover,
+    livabilityScore: scenarioBScore.city.livabilityScore,
+    outdoorComfort: scenarioBScore.outdoorComfort,
   };
   const singleClimateOverlays = useMemo(
     () =>
@@ -644,9 +321,13 @@ export default function MapPage() {
     const demoCity =
       cityNodes.find((city) => city.name === currentDemoStep.cityName) ??
       cityNodes[0];
+    const demoSearch = searchLocation({
+      query: demoCity.name,
+      fallbackCenter: [demoCity.longitude, demoCity.latitude],
+    });
 
-    setSelectedCity(demoCity);
-    setRegionalMapping(createKnownRegionalMapping(demoCity.name));
+    setSelectedCity(demoSearch.city);
+    setRegionalMapping(demoSearch.regionalMapping);
     setFocusedCityName(demoCity.name);
     setFocusRequestId((currentId) => currentId + 1);
     setClimateOverlayEnabled(true);
@@ -728,7 +409,7 @@ export default function MapPage() {
     longitude: number;
   }) => {
     setAreaRisk(
-      createAreaRisk(
+      getLocalAreaRisk(
         Math.min(100, Math.max(0, position.x)),
         Math.min(100, Math.max(0, position.y)),
       ),
@@ -739,8 +420,13 @@ export default function MapPage() {
   }, []);
 
   const selectCity = useCallback((city: MapCityNodeData) => {
-    setSelectedCity(city);
-    setRegionalMapping(createKnownRegionalMapping(city.name));
+    const result = searchLocation({
+      query: city.name,
+      fallbackCenter: [city.longitude, city.latitude],
+    });
+
+    setSelectedCity(result.city);
+    setRegionalMapping(result.regionalMapping);
   }, []);
 
   const syncComparisonView = useCallback((view: SyncedMapView) => {
@@ -749,28 +435,18 @@ export default function MapPage() {
   }, []);
 
   const searchRegion = useCallback((query: string): SearchResult => {
-    const normalizedQuery = query.trim().toLowerCase();
-    const matchedCity = cityNodes.find(
-      (city) => city.name.toLowerCase() === normalizedQuery,
-    );
-
-    if (matchedCity) {
-      setSelectedCity(matchedCity);
-      setRegionalMapping(createKnownRegionalMapping(matchedCity.name));
-      setFocusedCityName(matchedCity.name);
-      setFocusRequestId((currentId) => currentId + 1);
-      return "known";
-    }
-
-    const fallbackQuery = query.trim() || "Unmapped urban cell";
     const center = syncedView?.center ?? lastMapView?.center ?? [31, 30];
-    const mapping = createRegionalMapping(fallbackQuery, center);
+    const result = searchLocation({
+      query,
+      fallbackCenter: center,
+    });
 
-    setRegionalMapping(mapping);
-    setSelectedCity(createRegionalCity(mapping));
-    setFocusedCityName("");
+    setRegionalMapping(result.regionalMapping);
+    setSelectedCity(result.city);
+    setFocusedCityName(result.kind === "known" ? result.city.name : "");
+    setFocusRequestId((currentId) => currentId + 1);
 
-    return "regional";
+    return result.kind;
   }, [lastMapView, syncedView]);
 
   return (
