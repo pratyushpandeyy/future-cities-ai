@@ -1,0 +1,29 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "bangalore_urban",
+        "name": "Bengaluru Urban / Bangalore",
+        "source": "local_seed_geojson"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [77.3300, 13.2200],
+            [77.5200, 13.3000],
+            [77.7900, 13.2500],
+            [77.9100, 13.0500],
+            [77.8500, 12.8000],
+            [77.6400, 12.6900],
+            [77.3800, 12.7600],
+            [77.2400, 12.9400],
+            [77.3300, 13.2200]
+          ]
+        ]
+      }
+    }
+  ]
+}

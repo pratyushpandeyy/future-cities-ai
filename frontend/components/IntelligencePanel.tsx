@@ -84,6 +84,18 @@ function DataRow({ label, value }: { label: string; value: string | number }) {
   );
 }
 
+function formatBoundarySource(value: RegionalMappingData["boundarySource"]) {
+  if (value === "real_geojson") {
+    return "real GeoJSON";
+  }
+
+  if (value === "simulated_fallback") {
+    return "simulated fallback";
+  }
+
+  return "simulated";
+}
+
 function MetricRow({
   label,
   value,
@@ -347,13 +359,36 @@ export default function IntelligencePanel({
                     {regionalMapping.mappedRegion}
                   </span>
                 </p>
+                {regionalMapping.hierarchyLabel ? (
+                  <p className="mt-3 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-sm leading-6 text-white/60">
+                    {regionalMapping.hierarchyLabel}
+                  </p>
+                ) : null}
                 <div className="mt-4 grid gap-3">
                   <DataRow label="Input location" value={regionalMapping.inputLocation} />
+                  {regionalMapping.locality ? (
+                    <DataRow label="Locality" value={regionalMapping.locality} />
+                  ) : null}
+                  {regionalMapping.district ? (
+                    <DataRow label="District" value={regionalMapping.district} />
+                  ) : null}
+                  {regionalMapping.city ? (
+                    <DataRow label="City" value={regionalMapping.city} />
+                  ) : null}
+                  {regionalMapping.country ? (
+                    <DataRow label="Country" value={regionalMapping.country} />
+                  ) : null}
                   <DataRow label="Mapped region" value={regionalMapping.mappedRegion} />
                   <DataRow label="Climate zone" value={regionalMapping.climateZone} />
                   <DataRow label="Confidence" value={regionalMapping.confidence} />
+                  {regionalMapping.placeType ? (
+                    <DataRow label="Place type" value={regionalMapping.placeType} />
+                  ) : null}
                   <DataRow label="Nearest grid cell" value={regionalMapping.nearestGridCell} />
-                  <DataRow label="Boundary source" value={regionalMapping.boundarySource} />
+                  <DataRow
+                    label="Boundary source"
+                    value={formatBoundarySource(regionalMapping.boundarySource)}
+                  />
                 </div>
                 <p className="mt-4 text-sm leading-6 text-white/55">
                   This prototype maps places to a regional climate cell. Future
@@ -412,7 +447,11 @@ export default function IntelligencePanel({
                 />
                 <DataRow
                   label="Boundary source"
-                  value={regionalMapping?.boundarySource ?? "None selected"}
+                  value={
+                    regionalMapping
+                      ? formatBoundarySource(regionalMapping.boundarySource)
+                      : "None selected"
+                  }
                 />
                 <DataRow
                   label="Local cell"

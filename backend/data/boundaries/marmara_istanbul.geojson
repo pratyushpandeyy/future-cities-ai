@@ -1,0 +1,29 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": "marmara_istanbul",
+        "name": "Marmara / Istanbul Region",
+        "source": "local_seed_geojson"
+      },
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [26.1500, 41.8500],
+            [27.7000, 42.1500],
+            [29.6000, 41.9500],
+            [30.9500, 41.4800],
+            [30.6500, 40.4200],
+            [29.0000, 40.0500],
+            [27.1500, 40.3000],
+            [26.0500, 40.9500],
+            [26.1500, 41.8500]
+          ]
+        ]
+      }
+    }
+  ]
+}

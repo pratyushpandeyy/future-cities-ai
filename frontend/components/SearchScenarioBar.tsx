@@ -23,7 +23,7 @@ interface SearchScenarioBarProps {
   onComparisonModeChange: (enabled: boolean) => void;
   onScientificViewChange: (enabled: boolean) => void;
   onDemoTourStart: () => void;
-  onSearch: (query: string) => SearchResult;
+  onSearch: (query: string) => Promise<SearchResult>;
 }
 
 export default function SearchScenarioBar({
@@ -46,13 +46,19 @@ export default function SearchScenarioBar({
   const [message, setMessage] = useState<string | null>(null);
   const activeWarming = mode === "predicted" ? predictedWarming : warming;
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
-    const result = onSearch(query);
-    setMessage(
-      result === "known" ? null : "Region extrapolation mode activated",
-    );
+    setMessage("Searching...");
+
+    try {
+      const result = await onSearch(query);
+      setMessage(
+        result === "known" ? null : "Region extrapolation mode activated",
+      );
+    } catch {
+      setMessage("Backend search unavailable. Try again in a moment.");
+    }
   }
 
   return (

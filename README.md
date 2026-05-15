@@ -40,3 +40,11 @@ Available mock endpoints:
 - `POST /api/scenario/score`
 - `POST /api/scenario/compare`
 - `GET /api/region-boundary?location=istanbul`
+
+For real geocoding, set this in `backend/.env`:
+
+```bash
+MAPBOX_GEOCODING_TOKEN=your_mapbox_token
+```
+
+If no Mapbox token is configured, the backend tries Nominatim/OpenStreetMap and then falls back to deterministic simulated search.

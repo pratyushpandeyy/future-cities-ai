@@ -7,6 +7,15 @@ class LocationResult(BaseModel):
     climate_zone: str
     latitude: float
     longitude: float
+    locality: str | None = None
+    district: str | None = None
+    city: str | None = None
+    country: str | None = None
+    hierarchy_label: str | None = None
+    place_type: str | None = None
+    geocoder_provider: str | None = None
+    geocoder_metadata: dict[str, object] | None = None
+    bbox: list[float] | None = None
     known: bool
     extrapolated: bool
     location_id: str
@@ -56,3 +65,4 @@ class RegionBoundaryResponse(BaseModel):
     location: LocationResult
     boundary_source: str
     polygon: list[list[float]]
+    geojson: dict[str, object] | None = None

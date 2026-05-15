@@ -19,14 +19,17 @@ import SearchScenarioBar, {
 } from "@/components/SearchScenarioBar";
 import {
   generateClimateOverlays,
+  type RegionBoundaryFeatureCollection,
   type Season,
 } from "@/lib/climateOverlaySimulation";
 import {
   compareScenarios,
   getLocalAreaRisk,
-  getOutdoorComfort,
+  getRegionBoundary,
   getScenarioScore,
   searchLocation,
+  type ComparisonMetrics,
+  type ScenarioScoreResult,
 } from "@/lib/api/mockClient";
 import {
   climateLayerNames,
@@ -45,6 +48,29 @@ const years = scenarioYears;
 
 type LayerState = Record<(typeof layerNames)[number], boolean>;
 type InspectedScenario = "A" | "B";
+type LoadingState = {
+  searching: boolean;
+  scenario: boolean;
+  explanation: boolean;
+};
+
+const initialComparisonMetrics: ComparisonMetrics = {
+  heatIncrease: 0,
+  livabilityDecline: 0,
+  outdoorComfortChange: 0,
+  scientificMetric: "Wet bulb anomaly +0.0C",
+  humanTranslation:
+    "Scenario comparison will update after the backend response is received.",
+};
+
+function createInitialScenarioScore(city: MapCityNodeData): ScenarioScoreResult {
+  return {
+    city,
+    outdoorComfort: "Moderate",
+    wetBulbAnomaly: 0,
+    summary: city.futureSummary,
+  };
+}
 
 function createLayerPreset(enabledLayers: (typeof layerNames)[number][]) {
   return layerNames.reduce<LayerState>(
@@ -193,26 +219,38 @@ export default function MapPage() {
   const [demoActive, setDemoActive] = useState(false);
   const [demoIndex, setDemoIndex] = useState(0);
   const [demoPaused, setDemoPaused] = useState(false);
+  const [loadingState, setLoadingState] = useState<LoadingState>({
+    searching: false,
+    scenario: false,
+    explanation: false,
+  });
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [scenarioScore, setScenarioScore] = useState<ScenarioScoreResult>(
+    createInitialScenarioScore(cityNodes[0]),
+  );
+  const [inspectedScenarioScore, setInspectedScenarioScore] =
+    useState<ScenarioScoreResult>(createInitialScenarioScore(cityNodes[0]));
+  const [scenarioAScore, setScenarioAScore] = useState<ScenarioScoreResult>(
+    createInitialScenarioScore(cityNodes[0]),
+  );
+  const [scenarioBScore, setScenarioBScore] = useState<ScenarioScoreResult>(
+    createInitialScenarioScore(cityNodes[0]),
+  );
+  const [comparisonMetrics, setComparisonMetrics] = useState<ComparisonMetrics>(
+    initialComparisonMetrics,
+  );
+  const [regionBoundary, setRegionBoundary] =
+    useState<RegionBoundaryFeatureCollection | null>(null);
 
   const activeLayers = layerNames.filter((layerName) => layers[layerName]);
   const currentDemoStep = demoActive ? demoSteps[demoIndex] : null;
   const predictedWarming = predictedWarmingByYear[selectedYear];
   const activeWarming =
     scenarioMode === "predicted" ? predictedWarming : manualWarming;
-  const scenarioScore = getScenarioScore({
-    city: selectedCity,
-    warming: activeWarming,
-    localUrbanCell,
-  });
   const scenarioCity = scenarioScore.city;
   const outdoorComfort = scenarioScore.outdoorComfort;
   const inspectedScenarioConfig =
     inspectedScenario === "A" ? scenarioA : scenarioB;
-  const inspectedScenarioScore = getScenarioScore({
-    city: selectedCity,
-    warming: inspectedScenarioConfig.warming,
-    localUrbanCell,
-  });
   const panelCity = comparisonMode ? inspectedScenarioScore.city : scenarioCity;
   const panelYear = comparisonMode ? inspectedScenarioConfig.year : selectedYear;
   const panelWarming = comparisonMode
@@ -224,22 +262,6 @@ export default function MapPage() {
   const panelActiveOverlays = comparisonMode
     ? layerNames.filter((layerName) => inspectedScenarioConfig.overlays[layerName])
     : activeLayers;
-  const comparisonMetrics = compareScenarios({
-    city: selectedCity,
-    scenarioA,
-    scenarioB,
-    localUrbanCell,
-  });
-  const scenarioAScore = getScenarioScore({
-    city: selectedCity,
-    warming: scenarioA.warming,
-    localUrbanCell,
-  });
-  const scenarioBScore = getScenarioScore({
-    city: selectedCity,
-    warming: scenarioB.warming,
-    localUrbanCell,
-  });
   const scenarioASnapshot = {
     label: "Scenario A",
     year: scenarioA.year,
@@ -308,47 +330,213 @@ export default function MapPage() {
   );
 
   useEffect(() => {
+    let cancelled = false;
+
+    setLoadingState((current) => ({
+      ...current,
+      scenario: true,
+      explanation: true,
+    }));
+    setApiError(null);
+
+    Promise.all([
+      getScenarioScore({
+        city: selectedCity,
+        year: selectedYear,
+        warming: activeWarming,
+        season: selectedSeason,
+        localUrbanCell,
+      }),
+      getScenarioScore({
+        city: selectedCity,
+        year: inspectedScenarioConfig.year,
+        warming: inspectedScenarioConfig.warming,
+        season: inspectedScenarioConfig.season,
+        localUrbanCell,
+      }),
+      getScenarioScore({
+        city: selectedCity,
+        year: scenarioA.year,
+        warming: scenarioA.warming,
+        season: scenarioA.season,
+        localUrbanCell,
+      }),
+      getScenarioScore({
+        city: selectedCity,
+        year: scenarioB.year,
+        warming: scenarioB.warming,
+        season: scenarioB.season,
+        localUrbanCell,
+      }),
+      compareScenarios({
+        city: selectedCity,
+        scenarioA,
+        scenarioB,
+        localUrbanCell,
+      }),
+    ])
+      .then(
+        ([
+          nextScenarioScore,
+          nextInspectedScore,
+          nextScenarioAScore,
+          nextScenarioBScore,
+          nextComparisonMetrics,
+        ]) => {
+          if (cancelled) {
+            return;
+          }
+
+          setScenarioScore(nextScenarioScore);
+          setInspectedScenarioScore(nextInspectedScore);
+          setScenarioAScore(nextScenarioAScore);
+          setScenarioBScore(nextScenarioBScore);
+          setComparisonMetrics(nextComparisonMetrics);
+        },
+      )
+      .catch(() => {
+        if (!cancelled) {
+          setApiError(
+            "Backend data is temporarily unavailable. Showing the latest loaded scenario.",
+          );
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingState((current) => ({
+            ...current,
+            scenario: false,
+            explanation: false,
+          }));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeWarming,
+    inspectedScenarioConfig.season,
+    inspectedScenarioConfig.warming,
+    inspectedScenarioConfig.year,
+    localUrbanCell,
+    scenarioA,
+    scenarioB,
+    selectedCity,
+    selectedSeason,
+    selectedYear,
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!regionalMapping) {
+      setRegionBoundary(null);
+      return;
+    }
+
+    getRegionBoundary(regionalMapping)
+      .then((boundary) => {
+        if (!cancelled) {
+          setRegionBoundary(boundary);
+          const boundarySource =
+            boundary.features[0]?.properties?.boundarySource ??
+            regionalMapping.boundarySource;
+
+          setRegionalMapping((currentMapping) =>
+            currentMapping && currentMapping.boundarySource !== boundarySource
+              ? {
+                  ...currentMapping,
+                  boundarySource,
+                }
+              : currentMapping,
+          );
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRegionBoundary(null);
+          setApiError(
+            "Regional boundary could not be loaded from the backend.",
+          );
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [regionalMapping]);
+
+  useEffect(() => {
     if (!comparisonMode && activePanelTab === "Comparison") {
       setActivePanelTab("Overview");
     }
   }, [activePanelTab, comparisonMode]);
 
   useEffect(() => {
+    let cancelled = false;
+
     if (!currentDemoStep) {
       return;
     }
 
-    const demoCity =
-      cityNodes.find((city) => city.name === currentDemoStep.cityName) ??
-      cityNodes[0];
-    const demoSearch = searchLocation({
-      query: demoCity.name,
-      fallbackCenter: [demoCity.longitude, demoCity.latitude],
-    });
+    async function applyDemoStep() {
+      const demoCity =
+        cityNodes.find((city) => city.name === currentDemoStep?.cityName) ??
+        cityNodes[0];
 
-    setSelectedCity(demoSearch.city);
-    setRegionalMapping(demoSearch.regionalMapping);
-    setFocusedCityName(demoCity.name);
-    setFocusRequestId((currentId) => currentId + 1);
-    setClimateOverlayEnabled(true);
-    setLayers(currentDemoStep.layers);
-    setSelectedYear(currentDemoStep.year);
-    setManualWarming(currentDemoStep.warming);
-    setScenarioMode("manual");
-    setSelectedSeason(currentDemoStep.season);
-    setComparisonMode(currentDemoStep.comparisonMode);
-    setActivePanelTab(currentDemoStep.targetTab);
-    setInspectedScenario(currentDemoStep.inspectedScenario ?? "B");
-    setAreaRisk(null);
-    setLocalUrbanCell(null);
+      setLoadingState((current) => ({ ...current, searching: true }));
+      setApiError(null);
 
-    if (currentDemoStep.scenarioA) {
-      setScenarioA(currentDemoStep.scenarioA);
+      try {
+        const demoSearch = await searchLocation({
+          query: demoCity.name,
+          fallbackCenter: [demoCity.longitude, demoCity.latitude],
+        });
+
+        if (cancelled || !currentDemoStep) {
+          return;
+        }
+
+        setSelectedCity(demoSearch.city);
+        setRegionalMapping(demoSearch.regionalMapping);
+        setFocusedCityName(demoCity.name);
+        setFocusRequestId((currentId) => currentId + 1);
+        setClimateOverlayEnabled(true);
+        setLayers(currentDemoStep.layers);
+        setSelectedYear(currentDemoStep.year);
+        setManualWarming(currentDemoStep.warming);
+        setScenarioMode("manual");
+        setSelectedSeason(currentDemoStep.season);
+        setComparisonMode(currentDemoStep.comparisonMode);
+        setActivePanelTab(currentDemoStep.targetTab);
+        setInspectedScenario(currentDemoStep.inspectedScenario ?? "B");
+        setAreaRisk(null);
+        setLocalUrbanCell(null);
+
+        if (currentDemoStep.scenarioA) {
+          setScenarioA(currentDemoStep.scenarioA);
+        }
+
+        if (currentDemoStep.scenarioB) {
+          setScenarioB(currentDemoStep.scenarioB);
+        }
+      } catch {
+        if (!cancelled) {
+          setApiError("Demo tour could not load backend search data.");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoadingState((current) => ({ ...current, searching: false }));
+        }
+      }
     }
 
-    if (currentDemoStep.scenarioB) {
-      setScenarioB(currentDemoStep.scenarioB);
-    }
+    void applyDemoStep();
+
+    return () => {
+      cancelled = true;
+    };
   }, [currentDemoStep]);
 
   useEffect(() => {
@@ -419,14 +607,23 @@ export default function MapPage() {
     );
   }, []);
 
-  const selectCity = useCallback((city: MapCityNodeData) => {
-    const result = searchLocation({
-      query: city.name,
-      fallbackCenter: [city.longitude, city.latitude],
-    });
+  const selectCity = useCallback(async (city: MapCityNodeData) => {
+    setLoadingState((current) => ({ ...current, searching: true }));
+    setApiError(null);
 
-    setSelectedCity(result.city);
-    setRegionalMapping(result.regionalMapping);
+    try {
+      const result = await searchLocation({
+        query: city.name,
+        fallbackCenter: [city.longitude, city.latitude],
+      });
+
+      setSelectedCity(result.city);
+      setRegionalMapping(result.regionalMapping);
+    } catch {
+      setApiError("Search failed. Keeping the current location selected.");
+    } finally {
+      setLoadingState((current) => ({ ...current, searching: false }));
+    }
   }, []);
 
   const syncComparisonView = useCallback((view: SyncedMapView) => {
@@ -434,19 +631,30 @@ export default function MapPage() {
     setLastMapView(view);
   }, []);
 
-  const searchRegion = useCallback((query: string): SearchResult => {
+  const searchRegion = useCallback(async (query: string): Promise<SearchResult> => {
     const center = syncedView?.center ?? lastMapView?.center ?? [31, 30];
-    const result = searchLocation({
-      query,
-      fallbackCenter: center,
-    });
 
-    setRegionalMapping(result.regionalMapping);
-    setSelectedCity(result.city);
-    setFocusedCityName(result.kind === "known" ? result.city.name : "");
-    setFocusRequestId((currentId) => currentId + 1);
+    setLoadingState((current) => ({ ...current, searching: true }));
+    setApiError(null);
 
-    return result.kind;
+    try {
+      const result = await searchLocation({
+        query,
+        fallbackCenter: center,
+      });
+
+      setRegionalMapping(result.regionalMapping);
+      setSelectedCity(result.city);
+      setFocusedCityName(result.kind === "known" ? result.city.name : "");
+      setFocusRequestId((currentId) => currentId + 1);
+
+      return result.kind;
+    } catch {
+      setApiError("Search failed. Check that the FastAPI backend is running.");
+      return "regional";
+    } finally {
+      setLoadingState((current) => ({ ...current, searching: false }));
+    }
   }, [lastMapView, syncedView]);
 
   return (
@@ -551,6 +759,20 @@ export default function MapPage() {
             onSearch={searchRegion}
           />
 
+          {(loadingState.searching ||
+            loadingState.scenario ||
+            loadingState.explanation ||
+            apiError) ? (
+            <div className="absolute right-6 top-40 z-50 rounded-lg border border-white/10 bg-black/65 px-4 py-3 text-xs text-white/60 shadow-[0_18px_50px_rgba(0,0,0,0.35)] backdrop-blur-2xl">
+              {loadingState.searching ? <p>Searching...</p> : null}
+              {loadingState.scenario ? <p>Loading scenario...</p> : null}
+              {loadingState.explanation ? (
+                <p>Generating explanation...</p>
+              ) : null}
+              {apiError ? <p className="text-amber-100/80">{apiError}</p> : null}
+            </div>
+          ) : null}
+
           {currentDemoStep ? (
             <motion.div
               key={currentDemoStep.title}
@@ -642,6 +864,7 @@ export default function MapPage() {
                   focusRequestId={focusRequestId}
                   areaRisk={areaRisk}
                   regionalMapping={regionalMapping}
+                  regionBoundary={regionBoundary}
                   localUrbanCell={localUrbanCell}
                   climateOverlayEnabled={climateOverlayEnabled}
                   climateOverlays={scenarioAClimateOverlays}
@@ -672,6 +895,7 @@ export default function MapPage() {
                   focusRequestId={focusRequestId}
                   areaRisk={areaRisk}
                   regionalMapping={regionalMapping}
+                  regionBoundary={regionBoundary}
                   localUrbanCell={localUrbanCell}
                   climateOverlayEnabled={climateOverlayEnabled}
                   climateOverlays={scenarioBClimateOverlays}
@@ -690,6 +914,7 @@ export default function MapPage() {
               focusRequestId={focusRequestId}
               areaRisk={areaRisk}
               regionalMapping={regionalMapping}
+              regionBoundary={regionBoundary}
               localUrbanCell={localUrbanCell}
               climateOverlayEnabled={climateOverlayEnabled}
               climateOverlays={singleClimateOverlays}

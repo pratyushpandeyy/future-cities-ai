@@ -7,6 +7,7 @@ from app.models.schemas import (
     ScenarioScoreRequest,
     ScenarioScoreResponse,
 )
+from app.services.geocoding import geocode_location
 
 
 KNOWN_LOCATIONS = {
@@ -156,6 +157,11 @@ def search_location(query: str) -> LocationResult:
             climate_zone=known["climate_zone"],
             latitude=known["latitude"],
             longitude=known["longitude"],
+            city=known["location_name"],
+            country=known.get("country"),
+            hierarchy_label=f"{known['location_name']} / {known['region']}",
+            place_type="place",
+            geocoder_provider="simulated",
             known=True,
             extrapolated=False,
             location_id=normalized,
@@ -177,10 +183,18 @@ def search_location(query: str) -> LocationResult:
         ][hash_value % 4],
         latitude=latitude,
         longitude=longitude,
+        locality=fallback,
+        hierarchy_label=f"{fallback} / Simulated regional climate cell",
+        place_type="extrapolated_location",
+        geocoder_provider="simulated",
         known=False,
         extrapolated=True,
         location_id=f"sim-{hash_value % 10000}",
     )
+
+
+def resolve_location(location: str) -> LocationResult:
+    return geocode_location(location) or search_location(location)
 
 
 def get_location_baseline(location: str) -> dict[str, float | int | str]:
@@ -220,7 +234,7 @@ def time_adjustment(time_of_day: str) -> int:
 
 
 def score_scenario(payload: ScenarioScoreRequest | ScenarioInput) -> ScenarioScoreResponse:
-    location = search_location(payload.location)
+    location = resolve_location(payload.location)
     baseline = get_location_baseline(payload.location)
     heat_season, flood_season, comfort_season = season_adjustments(payload.season)
     heat_pressure = max(0, payload.warmingLevel - 1.0)
@@ -299,12 +313,21 @@ def comfort_numeric(label: str) -> int:
 
 
 def region_boundary(location: str) -> RegionBoundaryResponse:
-    location_result = search_location(location)
     normalized = normalize_location(location)
+    location_result = resolve_location(location)
     known_polygon = KNOWN_BOUNDARIES.get(normalized)
 
     if known_polygon:
         polygon = known_polygon
+    elif location_result.bbox:
+        west, south, east, north = location_result.bbox
+        polygon = [
+            [west, north],
+            [east, north],
+            [east, south],
+            [west, south],
+            [west, north],
+        ]
     else:
         lon = location_result.longitude
         lat = location_result.latitude

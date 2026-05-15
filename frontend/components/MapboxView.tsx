@@ -11,8 +11,8 @@ import type { RegionalMappingData } from "@/components/regionalTypes";
 import {
   createRegionClimateSurface,
   type ClimateOverlayRenderModel,
+  type RegionBoundaryFeatureCollection,
 } from "@/lib/climateOverlaySimulation";
-import { getRegionBoundary } from "@/lib/api/mockClient";
 import type { LocalUrbanCellData } from "@/lib/localCellSimulation";
 
 interface MapboxViewProps {
@@ -23,6 +23,7 @@ interface MapboxViewProps {
   focusRequestId: number;
   areaRisk: AreaRiskData | null;
   regionalMapping: RegionalMappingData | null;
+  regionBoundary: RegionBoundaryFeatureCollection | null;
   localUrbanCell: LocalUrbanCellData | null;
   climateOverlayEnabled: boolean;
   climateOverlays: ClimateOverlayRenderModel[];
@@ -132,6 +133,7 @@ function getClimateSurfaceColor(
 function ensureRegionClimateLayers(
   map: mapboxgl.Map,
   regionalMapping: RegionalMappingData,
+  regionBoundary: RegionBoundaryFeatureCollection,
   activeOverlay?: ClimateOverlayRenderModel,
 ) {
   removeLegacyClimateLayers(map);
@@ -146,7 +148,7 @@ function ensureRegionClimateLayers(
     regionalMapping,
     activeOverlay,
   );
-  const boundary = getRegionBoundary(regionalMapping);
+  const boundary = regionBoundary;
 
   if (climateSource) {
     climateSource.setData(climateSurface);
@@ -252,8 +254,9 @@ function applyClimateSurface(
   climateOverlayEnabled: boolean,
   activeOverlay: ClimateOverlayRenderModel | undefined,
   regionalMapping: RegionalMappingData | null,
+  regionBoundary: RegionBoundaryFeatureCollection | null,
 ) {
-  if (!regionalMapping) {
+  if (!regionalMapping || !regionBoundary) {
     removeLegacyClimateLayers(map);
 
     if (map.getLayer(REGION_CLIMATE_LAYER_ID)) {
@@ -269,7 +272,7 @@ function applyClimateSurface(
     return;
   }
 
-  ensureRegionClimateLayers(map, regionalMapping, activeOverlay);
+  ensureRegionClimateLayers(map, regionalMapping, regionBoundary, activeOverlay);
 
   if (!climateOverlayEnabled || !activeOverlay) {
     map.setLayoutProperty(REGION_CLIMATE_LAYER_ID, "visibility", "none");
@@ -306,6 +309,7 @@ export default function MapboxView({
   focusRequestId,
   areaRisk,
   regionalMapping,
+  regionBoundary,
   localUrbanCell,
   climateOverlayEnabled,
   climateOverlays,
@@ -471,6 +475,7 @@ export default function MapboxView({
         climateOverlayEnabled,
         climateOverlays[0],
         regionalMapping,
+        regionBoundary,
       );
     };
 
@@ -479,7 +484,7 @@ export default function MapboxView({
     } else {
       map.once("load", updateClimateSurface);
     }
-  }, [climateOverlayEnabled, climateOverlays, regionalMapping]);
+  }, [climateOverlayEnabled, climateOverlays, regionBoundary, regionalMapping]);
 
   useEffect(() => {
     const map = mapRef.current;

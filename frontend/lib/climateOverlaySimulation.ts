@@ -28,7 +28,7 @@ export type RegionClimateFeatureCollection = FeatureCollection<
 
 export type RegionBoundaryFeatureCollection = FeatureCollection<
   Polygon,
-  { id: string; label: string }
+  { id: string; label: string; boundarySource?: RegionalMappingData["boundarySource"] }
 >;
 
 export interface ClimateOverlayScenario {
@@ -161,7 +161,7 @@ export function createKnownRegionalMapping(
 
   const mapping = knownRegions[normalizedName];
 
-  return mapping ? { ...mapping, boundarySource: "simulated" } : null;
+  return mapping ? { ...mapping, boundarySource: "simulated_fallback" } : null;
 }
 
 export function createRegionBoundary(
