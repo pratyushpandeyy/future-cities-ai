@@ -7,6 +7,7 @@ from app.models.schemas import (
     ScenarioScoreRequest,
     ScenarioScoreResponse,
 )
+from app.services.climate_engine import compute_scenario_score
 from app.services.geocoding import geocode_location
 
 
@@ -213,69 +214,9 @@ def get_location_baseline(location: str) -> dict[str, float | int | str]:
     }
 
 
-def season_adjustments(season: str) -> tuple[int, int, int]:
-    normalized = season.strip().lower()
-    if normalized == "summer":
-        return 10, 0, -8
-    if normalized == "monsoon":
-        return 0, 16, -5
-    if normalized == "winter":
-        return -8, -3, 7
-    return 2, 2, 0
-
-
-def time_adjustment(time_of_day: str) -> int:
-    normalized = time_of_day.strip().lower()
-    if normalized in {"afternoon", "peak heat"}:
-        return 7
-    if normalized == "night":
-        return -3
-    return 0
-
-
 def score_scenario(payload: ScenarioScoreRequest | ScenarioInput) -> ScenarioScoreResponse:
     location = resolve_location(payload.location)
-    baseline = get_location_baseline(payload.location)
-    heat_season, flood_season, comfort_season = season_adjustments(payload.season)
-    heat_pressure = max(0, payload.warmingLevel - 1.0)
-    year_pressure = max(0, payload.year - 2025) / 25
-
-    heat_score = (
-        float(baseline["base_heat"])
-        + heat_pressure * 14
-        + year_pressure * 6
-        + heat_season
-        + time_adjustment(payload.timeOfDay)
-    )
-    flood_score = float(baseline["base_flood"]) + year_pressure * 5 + flood_season
-    comfort_score = max(
-        18,
-        86 - payload.warmingLevel * 15 + comfort_season - time_adjustment(payload.timeOfDay),
-    )
-    livability_score = max(
-        42,
-        round(
-            float(baseline["base_livability"])
-            - heat_pressure * 6
-            - max(0, flood_score - 50) * 0.05
-        ),
-    )
-    green_cover = max(4, min(48, round(float(baseline["green_cover"]) - heat_pressure * 1.5)))
-    wet_bulb_anomaly = round(payload.warmingLevel * 0.72 + heat_season * 0.025, 1)
-
-    return ScenarioScoreResponse(
-        location=location,
-        livability_score=livability_score,
-        heat_risk=risk_label(heat_score),
-        flood_risk=risk_label(flood_score),
-        outdoor_comfort=comfort_label(comfort_score),
-        green_cover=f"{green_cover}%",
-        wet_bulb_anomaly=wet_bulb_anomaly,
-        summary=(
-            f"{location.region} shows simulated {risk_label(heat_score).lower()} heat risk "
-            f"and {comfort_label(comfort_score).lower()} outdoor comfort in {payload.year}."
-        ),
-    )
+    return compute_scenario_score(payload, location)
 
 
 def compare_scenarios(payload: ScenarioCompareRequest) -> ScenarioCompareResponse:
@@ -283,12 +224,16 @@ def compare_scenarios(payload: ScenarioCompareRequest) -> ScenarioCompareRespons
     score_b = score_scenario(payload.scenarioB)
     heat_increase = max(
         0,
-        round((payload.scenarioB.warmingLevel - payload.scenarioA.warmingLevel) * 16),
+        score_b.score_breakdown.heat_score - score_a.score_breakdown.heat_score,
     )
-    flood_increase = max(0, risk_numeric(score_b.flood_risk) - risk_numeric(score_a.flood_risk))
+    flood_increase = max(
+        0,
+        score_b.score_breakdown.flood_score - score_a.score_breakdown.flood_score,
+    )
     comfort_decline = max(
         0,
-        comfort_numeric(score_a.outdoor_comfort) - comfort_numeric(score_b.outdoor_comfort),
+        score_a.score_breakdown.outdoor_comfort_score
+        - score_b.score_breakdown.outdoor_comfort_score,
     )
     livability_decline = max(0, score_a.livability_score - score_b.livability_score)
 
@@ -298,7 +243,7 @@ def compare_scenarios(payload: ScenarioCompareRequest) -> ScenarioCompareRespons
         comfort_decline=comfort_decline,
         livability_decline=livability_decline,
         explanation=(
-            "Scenario B produces higher simulated climate pressure than Scenario A, "
+            f"Scenario B increases {score_b.dominant_risk_driver} relative to Scenario A, "
             "with weaker outdoor comfort and lower livability under the warmer pathway."
         ),
     )

@@ -17,13 +17,31 @@ export interface ScenarioScorePayload {
   warming: number;
   season: Season;
   timeOfDay?: string;
+  overlayTypes?: string[];
   localUrbanCell?: LocalUrbanCellData | null;
+}
+
+export interface ScoreBreakdown {
+  heatScore: number;
+  floodScore: number;
+  outdoorComfortScore: number;
+  airQualityScore: number;
+  greenCoverStressScore: number;
+  waterStressScore: number;
+  livabilityStressScore: number;
+  warmingPressure: number;
+  yearPressure: number;
+  seasonModifier: string;
+  timeOfDayModifier: string;
 }
 
 export interface ScenarioScoreResult {
   city: MapCityNodeData;
   outdoorComfort: string;
   wetBulbAnomaly: number;
+  climateRegionType: string;
+  scoreBreakdown: ScoreBreakdown;
+  dominantRiskDriver: string;
   summary: string;
 }
 
@@ -31,6 +49,7 @@ export interface ScenarioComparisonConfig {
   year: number;
   warming: number;
   season: Season;
+  overlays?: Partial<Record<string, boolean>>;
 }
 
 export interface CompareScenariosPayload {
@@ -91,8 +110,27 @@ interface ApiScenarioScoreResult {
   heat_risk: string;
   flood_risk: string;
   outdoor_comfort: string;
+  air_quality_proxy: string;
   green_cover: string;
+  green_cover_stress: string;
+  water_stress: string;
+  livability_stress: string;
   wet_bulb_anomaly: number;
+  climate_region_type: string;
+  score_breakdown: {
+    heat_score: number;
+    flood_score: number;
+    outdoor_comfort_score: number;
+    air_quality_score: number;
+    green_cover_stress_score: number;
+    water_stress_score: number;
+    livability_stress_score: number;
+    warming_pressure: number;
+    year_pressure: number;
+    season_modifier: string;
+    time_of_day_modifier: string;
+  };
+  dominant_risk_driver: string;
   summary: string;
 }
 
@@ -200,6 +238,21 @@ function apiScenarioToScore(
     },
     outdoorComfort: payload.outdoor_comfort,
     wetBulbAnomaly: payload.wet_bulb_anomaly,
+    climateRegionType: payload.climate_region_type,
+    scoreBreakdown: {
+      heatScore: payload.score_breakdown.heat_score,
+      floodScore: payload.score_breakdown.flood_score,
+      outdoorComfortScore: payload.score_breakdown.outdoor_comfort_score,
+      airQualityScore: payload.score_breakdown.air_quality_score,
+      greenCoverStressScore: payload.score_breakdown.green_cover_stress_score,
+      waterStressScore: payload.score_breakdown.water_stress_score,
+      livabilityStressScore: payload.score_breakdown.livability_stress_score,
+      warmingPressure: payload.score_breakdown.warming_pressure,
+      yearPressure: payload.score_breakdown.year_pressure,
+      seasonModifier: payload.score_breakdown.season_modifier,
+      timeOfDayModifier: payload.score_breakdown.time_of_day_modifier,
+    },
+    dominantRiskDriver: payload.dominant_risk_driver,
     summary: payload.summary,
   };
 }
@@ -225,6 +278,7 @@ export async function getScenarioScore({
   warming,
   season,
   timeOfDay = "Afternoon",
+  overlayTypes = [],
 }: ScenarioScorePayload): Promise<ScenarioScoreResult> {
   const payload = await requestJson<ApiScenarioScoreResult>(
     "/api/scenario/score",
@@ -236,6 +290,7 @@ export async function getScenarioScore({
         warmingLevel: warming,
         season,
         timeOfDay,
+        overlayTypes,
       }),
     },
   );
@@ -288,6 +343,11 @@ export async function compareScenarios({
           warmingLevel: scenarioA.warming,
           season: scenarioA.season,
           timeOfDay: "Afternoon",
+          overlayTypes: scenarioA.overlays
+            ? Object.keys(scenarioA.overlays).filter(
+                (overlay) => scenarioA.overlays?.[overlay],
+              )
+            : [],
         },
         scenarioB: {
           location: city.name,
@@ -295,6 +355,11 @@ export async function compareScenarios({
           warmingLevel: scenarioB.warming,
           season: scenarioB.season,
           timeOfDay: "Afternoon",
+          overlayTypes: scenarioB.overlays
+            ? Object.keys(scenarioB.overlays).filter(
+                (overlay) => scenarioB.overlays?.[overlay],
+              )
+            : [],
         },
       }),
     },

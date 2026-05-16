@@ -68,6 +68,21 @@ function createInitialScenarioScore(city: MapCityNodeData): ScenarioScoreResult 
     city,
     outdoorComfort: "Moderate",
     wetBulbAnomaly: 0,
+    climateRegionType: "continental",
+    scoreBreakdown: {
+      heatScore: 0,
+      floodScore: 0,
+      outdoorComfortScore: 0,
+      airQualityScore: 0,
+      greenCoverStressScore: 0,
+      waterStressScore: 0,
+      livabilityStressScore: 0,
+      warmingPressure: 0,
+      yearPressure: 0,
+      seasonModifier: "Summer",
+      timeOfDayModifier: "Afternoon",
+    },
+    dominantRiskDriver: "warming pressure",
     summary: city.futureSummary,
   };
 }
@@ -259,6 +274,15 @@ export default function MapPage() {
   const panelOutdoorComfort = comparisonMode
     ? inspectedScenarioScore.outdoorComfort
     : outdoorComfort;
+  const panelScoreBreakdown = comparisonMode
+    ? inspectedScenarioScore.scoreBreakdown
+    : scenarioScore.scoreBreakdown;
+  const panelClimateRegionType = comparisonMode
+    ? inspectedScenarioScore.climateRegionType
+    : scenarioScore.climateRegionType;
+  const panelDominantRiskDriver = comparisonMode
+    ? inspectedScenarioScore.dominantRiskDriver
+    : scenarioScore.dominantRiskDriver;
   const panelActiveOverlays = comparisonMode
     ? layerNames.filter((layerName) => inspectedScenarioConfig.overlays[layerName])
     : activeLayers;
@@ -345,6 +369,7 @@ export default function MapPage() {
         year: selectedYear,
         warming: activeWarming,
         season: selectedSeason,
+        overlayTypes: activeLayers,
         localUrbanCell,
       }),
       getScenarioScore({
@@ -352,6 +377,9 @@ export default function MapPage() {
         year: inspectedScenarioConfig.year,
         warming: inspectedScenarioConfig.warming,
         season: inspectedScenarioConfig.season,
+        overlayTypes: layerNames.filter(
+          (layerName) => inspectedScenarioConfig.overlays[layerName],
+        ),
         localUrbanCell,
       }),
       getScenarioScore({
@@ -359,6 +387,7 @@ export default function MapPage() {
         year: scenarioA.year,
         warming: scenarioA.warming,
         season: scenarioA.season,
+        overlayTypes: layerNames.filter((layerName) => scenarioA.overlays[layerName]),
         localUrbanCell,
       }),
       getScenarioScore({
@@ -366,6 +395,7 @@ export default function MapPage() {
         year: scenarioB.year,
         warming: scenarioB.warming,
         season: scenarioB.season,
+        overlayTypes: layerNames.filter((layerName) => scenarioB.overlays[layerName]),
         localUrbanCell,
       }),
       compareScenarios({
@@ -417,8 +447,10 @@ export default function MapPage() {
   }, [
     activeWarming,
     inspectedScenarioConfig.season,
+    inspectedScenarioConfig.overlays,
     inspectedScenarioConfig.warming,
     inspectedScenarioConfig.year,
+    layers,
     localUrbanCell,
     scenarioA,
     scenarioB,
@@ -938,6 +970,9 @@ export default function MapPage() {
             scenarioMode={scenarioMode}
             warming={panelWarming}
             outdoorComfort={panelOutdoorComfort}
+            climateRegionType={panelClimateRegionType}
+            scoreBreakdown={panelScoreBreakdown}
+            dominantRiskDriver={panelDominantRiskDriver}
             comparisonMode={comparisonMode}
             scientificView={scientificView}
             inspectedScenario={inspectedScenario}

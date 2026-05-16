@@ -27,6 +27,21 @@ class ScenarioScoreRequest(BaseModel):
     warmingLevel: float = Field(ge=1.0, le=4.0)
     season: str
     timeOfDay: str
+    overlayTypes: list[str] = Field(default_factory=list)
+
+
+class ScoreBreakdown(BaseModel):
+    heat_score: int
+    flood_score: int
+    outdoor_comfort_score: int
+    air_quality_score: int
+    green_cover_stress_score: int
+    water_stress_score: int
+    livability_stress_score: int
+    warming_pressure: float
+    year_pressure: float
+    season_modifier: str
+    time_of_day_modifier: str
 
 
 class ScenarioScoreResponse(BaseModel):
@@ -35,8 +50,15 @@ class ScenarioScoreResponse(BaseModel):
     heat_risk: str
     flood_risk: str
     outdoor_comfort: str
+    air_quality_proxy: str
     green_cover: str
+    green_cover_stress: str
+    water_stress: str
+    livability_stress: str
     wet_bulb_anomaly: float
+    climate_region_type: str
+    score_breakdown: ScoreBreakdown
+    dominant_risk_driver: str
     summary: str
 
 
@@ -46,6 +68,7 @@ class ScenarioInput(BaseModel):
     warmingLevel: float = Field(ge=1.0, le=4.0)
     season: str
     timeOfDay: str
+    overlayTypes: list[str] = Field(default_factory=list)
 
 
 class ScenarioCompareRequest(BaseModel):

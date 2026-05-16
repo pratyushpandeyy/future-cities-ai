@@ -18,6 +18,7 @@ import type { AreaRiskData } from "@/components/AreaRiskInspector";
 import type { MapCityNodeData } from "@/components/MapCityNode";
 import type { RegionalMappingData } from "@/components/regionalTypes";
 import type { ScenarioMode } from "@/components/SearchScenarioBar";
+import type { ScoreBreakdown } from "@/lib/api/mockClient";
 import type { LocalUrbanCellData } from "@/lib/localCellSimulation";
 
 interface ComparisonMetrics {
@@ -46,6 +47,9 @@ interface IntelligencePanelProps {
   scenarioMode: ScenarioMode;
   warming: number;
   outdoorComfort: string;
+  climateRegionType: string;
+  scoreBreakdown: ScoreBreakdown;
+  dominantRiskDriver: string;
   comparisonMode: boolean;
   scientificView: boolean;
   inspectedScenario: "A" | "B";
@@ -96,6 +100,10 @@ function formatBoundarySource(value: RegionalMappingData["boundarySource"]) {
   return "simulated";
 }
 
+function formatClimateRegion(value: string) {
+  return value.replace(/_/g, " ");
+}
+
 function MetricRow({
   label,
   value,
@@ -144,6 +152,9 @@ export default function IntelligencePanel({
   scenarioMode,
   warming,
   outdoorComfort,
+  climateRegionType,
+  scoreBreakdown,
+  dominantRiskDriver,
   comparisonMode,
   scientificView,
   inspectedScenario,
@@ -290,6 +301,24 @@ export default function IntelligencePanel({
                   {year} / +{warming.toFixed(1)}C
                 </p>
               </div>
+              <details className="group rounded-lg border border-white/10 bg-black/25 p-4">
+                <summary className="cursor-pointer list-none text-sm font-medium text-white/80">
+                  Why this score?
+                </summary>
+                <p className="mt-3 text-sm leading-6 text-white/55">
+                  {dominantRiskDriver} is the dominant driver in a{" "}
+                  {formatClimateRegion(climateRegionType)} climate profile.
+                  Warming, {scoreBreakdown.seasonModifier.toLowerCase()} season,
+                  and {scoreBreakdown.timeOfDayModifier.toLowerCase()} conditions
+                  produce the current livability estimate.
+                </p>
+                <div className="mt-3 grid grid-cols-2 gap-2">
+                  <DataRow label="Heat" value={scoreBreakdown.heatScore} />
+                  <DataRow label="Flood" value={scoreBreakdown.floodScore} />
+                  <DataRow label="Comfort" value={scoreBreakdown.outdoorComfortScore} />
+                  <DataRow label="Air" value={scoreBreakdown.airQualityScore} />
+                </div>
+              </details>
             </>
           ) : null}
 
@@ -460,6 +489,19 @@ export default function IntelligencePanel({
                 <DataRow
                   label="Local risk"
                   value={areaRisk?.overallLocalRisk ?? "No area selected"}
+                />
+                <DataRow
+                  label="Climate region"
+                  value={formatClimateRegion(climateRegionType)}
+                />
+                <DataRow label="Dominant driver" value={dominantRiskDriver} />
+                <DataRow
+                  label="Livability stress"
+                  value={scoreBreakdown.livabilityStressScore}
+                />
+                <DataRow
+                  label="Water stress"
+                  value={scoreBreakdown.waterStressScore}
                 />
               </div>
               {localUrbanCell ? (

@@ -2,6 +2,11 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
+from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.orm import Session
+
+from app.db.models import AdministrativeBoundary
+from app.db.session import SessionLocal, is_database_configured
 from app.models.schemas import LocationResult, RegionBoundaryResponse
 from app.services.simulation import resolve_location
 
@@ -32,6 +37,19 @@ BOUNDARY_ALIASES = {
 
 def get_region_boundary(location: str) -> RegionBoundaryResponse:
     location_result = resolve_location(location)
+    database_boundary = find_database_boundary(location, location_result)
+
+    if database_boundary:
+        polygon = extract_polygon_ring(database_boundary.geometry_geojson)
+
+        if polygon:
+            return RegionBoundaryResponse(
+                location=location_result,
+                boundary_source="real_geojson",
+                polygon=polygon,
+                geojson=database_boundary.geometry_geojson,
+            )
+
     boundary_file = find_boundary_file(location, location_result)
 
     if boundary_file:
@@ -49,8 +67,49 @@ def get_region_boundary(location: str) -> RegionBoundaryResponse:
     return simulated_boundary(location_result)
 
 
+def find_database_boundary(
+    location: str,
+    location_result: LocationResult,
+) -> AdministrativeBoundary | None:
+    if not is_database_configured() or SessionLocal is None:
+        return None
+
+    try:
+        with SessionLocal() as session:
+            return match_database_boundary(session, location, location_result)
+    except SQLAlchemyError:
+        return None
+
+
+def match_database_boundary(
+    session: Session,
+    location: str,
+    location_result: LocationResult,
+) -> AdministrativeBoundary | None:
+    searchable_text = build_searchable_text(location, location_result)
+    boundaries = session.query(AdministrativeBoundary).all()
+
+    for boundary in boundaries:
+        boundary_terms = [boundary.name, boundary.country or "", *boundary.aliases]
+
+        if any(term.strip().lower() in searchable_text for term in boundary_terms if term):
+            return boundary
+
+    return None
+
+
 def find_boundary_file(location: str, location_result: LocationResult) -> str | None:
-    searchable_text = " ".join(
+    searchable_text = build_searchable_text(location, location_result)
+
+    for alias, boundary_file in BOUNDARY_ALIASES.items():
+        if alias in searchable_text:
+            return boundary_file
+
+    return None
+
+
+def build_searchable_text(location: str, location_result: LocationResult) -> str:
+    return " ".join(
         filter(
             None,
             [
@@ -65,12 +124,6 @@ def find_boundary_file(location: str, location_result: LocationResult) -> str | 
             ],
         ),
     ).lower()
-
-    for alias, boundary_file in BOUNDARY_ALIASES.items():
-        if alias in searchable_text:
-            return boundary_file
-
-    return None
 
 
 @lru_cache(maxsize=16)
