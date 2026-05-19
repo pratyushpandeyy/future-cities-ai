@@ -1,4 +1,5 @@
 from pydantic import BaseModel, Field
+from datetime import datetime
 
 
 class LocationResult(BaseModel):
@@ -44,6 +45,15 @@ class ScoreBreakdown(BaseModel):
     time_of_day_modifier: str
 
 
+class ClimateRasterSample(BaseModel):
+    sampled_value: float
+    grid_cell_id: str
+    raster_source: str
+    dataset_name: str
+    dataset_resolution: str
+    layer_type: str
+
+
 class ScenarioScoreResponse(BaseModel):
     location: LocationResult
     livability_score: int
@@ -59,6 +69,7 @@ class ScenarioScoreResponse(BaseModel):
     climate_region_type: str
     score_breakdown: ScoreBreakdown
     dominant_risk_driver: str
+    raster_sample: ClimateRasterSample | None = None
     summary: str
 
 
@@ -87,5 +98,24 @@ class ScenarioCompareResponse(BaseModel):
 class RegionBoundaryResponse(BaseModel):
     location: LocationResult
     boundary_source: str
+    boundary_name: str | None = None
+    boundary_match_reason: str | None = None
+    climate_region_type: str | None = None
+    db_boundary_id: int | None = None
     polygon: list[list[float]]
     geojson: dict[str, object] | None = None
+
+
+class AdminBoundarySummary(BaseModel):
+    id: int
+    name: str
+    aliases: list[str]
+    country: str | None
+    region_type: str
+    climate_region_type: str
+    source: str
+    created_at: datetime
+
+
+class AdminBoundaryDetail(AdminBoundarySummary):
+    geometry_geojson: dict[str, object]

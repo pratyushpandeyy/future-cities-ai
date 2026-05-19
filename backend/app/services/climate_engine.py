@@ -5,6 +5,7 @@ from app.models.schemas import (
     ScenarioScoreResponse,
     ScoreBreakdown,
 )
+from app.services.climate_data.climate_raster_service import sample_climate_raster
 
 
 CLIMATE_REGION_PRESETS = {
@@ -96,6 +97,14 @@ def compute_scenario_score(
     overlay_types = [overlay.lower() for overlay in payload.overlayTypes]
     coastal = is_coastal(location)
     dense_urban = is_dense_urban(location)
+    raster_sample = sample_climate_raster(
+        latitude=location.latitude,
+        longitude=location.longitude,
+        layer_type="heat_stress",
+    )
+    raster_heat_adjustment = (
+        (raster_sample.sampled_value - 0.5) * 18 if raster_sample else 0
+    )
 
     heat_season = {"summer": 14, "winter": -9, "monsoon": 1, "spring": 4}.get(
         season,
@@ -124,6 +133,7 @@ def compute_scenario_score(
         + time_heat * preset["night_heat_retention"]
         + (7 if dense_urban else 0)
         + (4 if "heat risk" in overlay_types else 0)
+        + raster_heat_adjustment
     )
     flood_score = (
         preset["base_flood"]
@@ -205,6 +215,7 @@ def compute_scenario_score(
         climate_region_type=climate_region_type,
         score_breakdown=breakdown,
         dominant_risk_driver=dominant_driver,
+        raster_sample=raster_sample,
         summary=build_summary(
             location=location,
             climate_region_type=climate_region_type,

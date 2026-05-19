@@ -21,6 +21,15 @@ export interface ScenarioScorePayload {
   localUrbanCell?: LocalUrbanCellData | null;
 }
 
+export interface RasterSample {
+  sampledValue: number;
+  gridCellId: string;
+  rasterSource: string;
+  datasetName: string;
+  datasetResolution: string;
+  layerType: string;
+}
+
 export interface ScoreBreakdown {
   heatScore: number;
   floodScore: number;
@@ -42,6 +51,7 @@ export interface ScenarioScoreResult {
   climateRegionType: string;
   scoreBreakdown: ScoreBreakdown;
   dominantRiskDriver: string;
+  rasterSample: RasterSample | null;
   summary: string;
 }
 
@@ -131,6 +141,14 @@ interface ApiScenarioScoreResult {
     time_of_day_modifier: string;
   };
   dominant_risk_driver: string;
+  raster_sample?: {
+    sampled_value: number;
+    grid_cell_id: string;
+    raster_source: string;
+    dataset_name: string;
+    dataset_resolution: string;
+    layer_type: string;
+  } | null;
   summary: string;
 }
 
@@ -144,7 +162,11 @@ interface ApiComparisonResult {
 
 interface ApiRegionBoundaryResult {
   location: ApiLocationResult;
-  boundary_source: "real_geojson" | "simulated_fallback" | "simulated";
+  boundary_source: "database" | "real_geojson" | "simulated_fallback" | "simulated";
+  boundary_name?: string | null;
+  boundary_match_reason?: string | null;
+  climate_region_type?: string | null;
+  db_boundary_id?: number | null;
   polygon: [number, number][];
   geojson?: RegionBoundaryFeatureCollection | null;
 }
@@ -253,6 +275,16 @@ function apiScenarioToScore(
       timeOfDayModifier: payload.score_breakdown.time_of_day_modifier,
     },
     dominantRiskDriver: payload.dominant_risk_driver,
+    rasterSample: payload.raster_sample
+      ? {
+          sampledValue: payload.raster_sample.sampled_value,
+          gridCellId: payload.raster_sample.grid_cell_id,
+          rasterSource: payload.raster_sample.raster_source,
+          datasetName: payload.raster_sample.dataset_name,
+          datasetResolution: payload.raster_sample.dataset_resolution,
+          layerType: payload.raster_sample.layer_type,
+        }
+      : null,
     summary: payload.summary,
   };
 }
@@ -394,6 +426,10 @@ export async function getRegionBoundary(
           label: result.location.region,
           ...feature.properties,
           boundarySource: result.boundary_source,
+          boundaryName: result.boundary_name,
+          boundaryMatchReason: result.boundary_match_reason,
+          dbBoundaryId: result.db_boundary_id,
+          boundaryClimateRegionType: result.climate_region_type,
         },
       })),
     };
@@ -416,6 +452,10 @@ export async function getRegionBoundary(
           id: result.location.location_id,
           label: result.location.region,
           boundarySource: result.boundary_source,
+          boundaryName: result.boundary_name,
+          boundaryMatchReason: result.boundary_match_reason,
+          dbBoundaryId: result.db_boundary_id,
+          boundaryClimateRegionType: result.climate_region_type,
         },
         geometry: {
           type: "Polygon",

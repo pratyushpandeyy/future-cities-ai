@@ -18,7 +18,7 @@ import type { AreaRiskData } from "@/components/AreaRiskInspector";
 import type { MapCityNodeData } from "@/components/MapCityNode";
 import type { RegionalMappingData } from "@/components/regionalTypes";
 import type { ScenarioMode } from "@/components/SearchScenarioBar";
-import type { ScoreBreakdown } from "@/lib/api/mockClient";
+import type { RasterSample, ScoreBreakdown } from "@/lib/api/mockClient";
 import type { LocalUrbanCellData } from "@/lib/localCellSimulation";
 
 interface ComparisonMetrics {
@@ -50,6 +50,7 @@ interface IntelligencePanelProps {
   climateRegionType: string;
   scoreBreakdown: ScoreBreakdown;
   dominantRiskDriver: string;
+  rasterSample: RasterSample | null;
   comparisonMode: boolean;
   scientificView: boolean;
   inspectedScenario: "A" | "B";
@@ -89,6 +90,10 @@ function DataRow({ label, value }: { label: string; value: string | number }) {
 }
 
 function formatBoundarySource(value: RegionalMappingData["boundarySource"]) {
+  if (value === "database") {
+    return "database";
+  }
+
   if (value === "real_geojson") {
     return "real GeoJSON";
   }
@@ -155,6 +160,7 @@ export default function IntelligencePanel({
   climateRegionType,
   scoreBreakdown,
   dominantRiskDriver,
+  rasterSample,
   comparisonMode,
   scientificView,
   inspectedScenario,
@@ -418,6 +424,24 @@ export default function IntelligencePanel({
                     label="Boundary source"
                     value={formatBoundarySource(regionalMapping.boundarySource)}
                   />
+                  {regionalMapping.boundaryName ? (
+                    <DataRow label="Boundary name" value={regionalMapping.boundaryName} />
+                  ) : null}
+                  {regionalMapping.boundaryMatchReason ? (
+                    <DataRow
+                      label="Match reason"
+                      value={regionalMapping.boundaryMatchReason}
+                    />
+                  ) : null}
+                  {regionalMapping.dbBoundaryId ? (
+                    <DataRow label="DB boundary ID" value={regionalMapping.dbBoundaryId} />
+                  ) : null}
+                  {regionalMapping.boundaryClimateRegionType ? (
+                    <DataRow
+                      label="Boundary climate"
+                      value={formatClimateRegion(regionalMapping.boundaryClimateRegionType)}
+                    />
+                  ) : null}
                 </div>
                 <p className="mt-4 text-sm leading-6 text-white/55">
                   This prototype maps places to a regional climate cell. Future
@@ -483,6 +507,18 @@ export default function IntelligencePanel({
                   }
                 />
                 <DataRow
+                  label="Boundary name"
+                  value={regionalMapping?.boundaryName ?? "None selected"}
+                />
+                <DataRow
+                  label="Match reason"
+                  value={regionalMapping?.boundaryMatchReason ?? "None selected"}
+                />
+                <DataRow
+                  label="DB boundary ID"
+                  value={regionalMapping?.dbBoundaryId ?? "None"}
+                />
+                <DataRow
                   label="Local cell"
                   value={localUrbanCell?.cellId ?? "No cell selected"}
                 />
@@ -502,6 +538,24 @@ export default function IntelligencePanel({
                 <DataRow
                   label="Water stress"
                   value={scoreBreakdown.waterStressScore}
+                />
+                <DataRow
+                  label="Raster source"
+                  value={rasterSample?.rasterSource ?? "Formula fallback"}
+                />
+                <DataRow
+                  label="Grid cell ID"
+                  value={rasterSample?.gridCellId ?? "No raster sample"}
+                />
+                <DataRow
+                  label="Sampled value"
+                  value={
+                    rasterSample ? rasterSample.sampledValue.toFixed(3) : "No sample"
+                  }
+                />
+                <DataRow
+                  label="Dataset resolution"
+                  value={rasterSample?.datasetResolution ?? "No dataset"}
                 />
               </div>
               {localUrbanCell ? (

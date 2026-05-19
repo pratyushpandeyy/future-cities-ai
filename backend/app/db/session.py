@@ -10,7 +10,11 @@ class Base(DeclarativeBase):
     pass
 
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True) if DATABASE_URL else None
+try:
+    engine = create_engine(DATABASE_URL, pool_pre_ping=True) if DATABASE_URL else None
+except ImportError:
+    engine = None
+
 SessionLocal = (
     sessionmaker(autocommit=False, autoflush=False, bind=engine)
     if engine

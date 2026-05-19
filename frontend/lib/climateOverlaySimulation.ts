@@ -28,7 +28,15 @@ export type RegionClimateFeatureCollection = FeatureCollection<
 
 export type RegionBoundaryFeatureCollection = FeatureCollection<
   Polygon,
-  { id: string; label: string; boundarySource?: RegionalMappingData["boundarySource"] }
+  {
+    id: string;
+    label: string;
+    boundarySource?: RegionalMappingData["boundarySource"];
+    boundaryName?: string | null;
+    boundaryMatchReason?: string | null;
+    dbBoundaryId?: number | null;
+    boundaryClimateRegionType?: string | null;
+  }
 >;
 
 export interface ClimateOverlayScenario {

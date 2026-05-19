@@ -1,0 +1,19 @@
+{
+  "dataset_name": "Future Cities AI demo heat stress grid v0",
+  "raster_source": "sampled_mock_scientific_grid",
+  "dataset_resolution": "5 degree demo grid",
+  "layer_type": "heat_stress",
+  "units": "normalized_heat_stress_index",
+  "cells": [
+    { "id": "FC-RAS-MH-001", "lat": 19.0, "lon": 73.0, "value": 0.86 },
+    { "id": "FC-RAS-KA-001", "lat": 13.0, "lon": 77.6, "value": 0.62 },
+    { "id": "FC-RAS-MR-001", "lat": 41.0, "lon": 29.0, "value": 0.58 },
+    { "id": "FC-RAS-MD-001", "lat": 40.4, "lon": -3.7, "value": 0.66 },
+    { "id": "FC-RAS-GM-001", "lat": 53.5, "lon": -2.2, "value": 0.34 },
+    { "id": "FC-RAS-NA-001", "lat": 30.0, "lon": 10.0, "value": 0.91 },
+    { "id": "FC-RAS-ME-001", "lat": 25.0, "lon": 45.0, "value": 0.94 },
+    { "id": "FC-RAS-CA-001", "lat": 43.0, "lon": 67.0, "value": 0.72 },
+    { "id": "FC-RAS-SE-001", "lat": 13.7, "lon": 100.5, "value": 0.78 },
+    { "id": "FC-RAS-WEU-001", "lat": 48.8, "lon": 2.3, "value": 0.45 }
+  ]
+}

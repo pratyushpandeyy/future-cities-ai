@@ -83,6 +83,7 @@ function createInitialScenarioScore(city: MapCityNodeData): ScenarioScoreResult 
       timeOfDayModifier: "Afternoon",
     },
     dominantRiskDriver: "warming pressure",
+    rasterSample: null,
     summary: city.futureSummary,
   };
 }
@@ -283,6 +284,9 @@ export default function MapPage() {
   const panelDominantRiskDriver = comparisonMode
     ? inspectedScenarioScore.dominantRiskDriver
     : scenarioScore.dominantRiskDriver;
+  const panelRasterSample = comparisonMode
+    ? inspectedScenarioScore.rasterSample
+    : scenarioScore.rasterSample;
   const panelActiveOverlays = comparisonMode
     ? layerNames.filter((layerName) => inspectedScenarioConfig.overlays[layerName])
     : activeLayers;
@@ -474,15 +478,36 @@ export default function MapPage() {
           const boundarySource =
             boundary.features[0]?.properties?.boundarySource ??
             regionalMapping.boundarySource;
+          const boundaryName = boundary.features[0]?.properties?.boundaryName;
+          const boundaryMatchReason =
+            boundary.features[0]?.properties?.boundaryMatchReason;
+          const dbBoundaryId = boundary.features[0]?.properties?.dbBoundaryId;
+          const boundaryClimateRegionType =
+            boundary.features[0]?.properties?.boundaryClimateRegionType;
 
-          setRegionalMapping((currentMapping) =>
-            currentMapping && currentMapping.boundarySource !== boundarySource
-              ? {
+          setRegionalMapping((currentMapping) => {
+            if (!currentMapping) {
+              return null;
+            }
+
+            const unchanged =
+              currentMapping.boundarySource === boundarySource &&
+              currentMapping.boundaryName === boundaryName &&
+              currentMapping.boundaryMatchReason === boundaryMatchReason &&
+              currentMapping.dbBoundaryId === dbBoundaryId &&
+              currentMapping.boundaryClimateRegionType === boundaryClimateRegionType;
+
+            return unchanged
+              ? currentMapping
+              : {
                   ...currentMapping,
                   boundarySource,
-                }
-              : currentMapping,
-          );
+                  boundaryName,
+                  boundaryMatchReason,
+                  dbBoundaryId,
+                  boundaryClimateRegionType,
+                };
+          });
         }
       })
       .catch(() => {
@@ -973,6 +998,7 @@ export default function MapPage() {
             climateRegionType={panelClimateRegionType}
             scoreBreakdown={panelScoreBreakdown}
             dominantRiskDriver={panelDominantRiskDriver}
+            rasterSample={panelRasterSample}
             comparisonMode={comparisonMode}
             scientificView={scientificView}
             inspectedScenario={inspectedScenario}
