@@ -7,9 +7,15 @@ export type ClimateOverlayName =
   | "Flood Risk"
   | "Outdoor Comfort"
   | "Green Cover"
-  | "Livability Stress";
+  | "Livability Stress"
+  | "Water Stress";
 
-export type ClimateSurfaceKind = "heat" | "flood" | "comfort" | "livability";
+export type ClimateSurfaceKind =
+  | "heat"
+  | "flood"
+  | "comfort"
+  | "livability"
+  | "water";
 export type Season = "Spring" | "Summer" | "Monsoon" | "Winter";
 
 type RegionClimateProperties = {
@@ -18,6 +24,7 @@ type RegionClimateProperties = {
   flood: number;
   comfort: number;
   livability: number;
+  water: number;
   alpha: number;
 };
 
@@ -52,10 +59,12 @@ export interface ClimateOverlayRenderModel {
   kind: ClimateSurfaceKind;
   label: string;
   legendGradient: string;
-  colorProperty: "heat" | "flood" | "comfort" | "livability";
+  colorProperty: "heat" | "flood" | "comfort" | "livability" | "water";
   intensity: number;
   opacity: number;
   season: Season;
+  year: number;
+  warming: number;
   coverage: number;
 }
 
@@ -236,6 +245,7 @@ export function createRegionClimateSurface(
         100,
       );
       const livability = clamp(94 - heat * 0.4 - flood * 0.22 - index * 1.6, 8, 100);
+      const water = clamp(42 + heat * 0.34 - flood * 0.12 + (season === "Summer" ? 12 : 0), 0, 100);
 
       return [
         feature(`${mapping.nearestGridCell}-band-${index}`, polygon, {
@@ -243,6 +253,7 @@ export function createRegionClimateSurface(
           flood,
           comfort,
           livability,
+          water,
           alpha: 0.18 + (6 - index) * 0.055,
         }),
       ];
@@ -357,6 +368,7 @@ function getActiveSurfaceKind(
   if (enabledLayers["Heat Risk"]) return "heat";
   if (enabledLayers["Flood Risk"]) return "flood";
   if (enabledLayers["Outdoor Comfort"]) return "comfort";
+  if (enabledLayers["Water Stress"]) return "water";
   if (enabledLayers["Livability Stress"]) return "livability";
 
   return null;
@@ -387,6 +399,8 @@ function getScenarioOpacity({
       ? (localUrbanCell?.heatRiskAdjustment ?? 0) / 280
       : kind === "flood"
         ? (localUrbanCell?.floodRiskAdjustment ?? 0) / 300
+        : kind === "water"
+          ? (localUrbanCell?.heatRiskAdjustment ?? 0) / 340
         : -(localUrbanCell?.outdoorComfortAdjustment ?? 0) / 320;
 
   return clamp(
@@ -427,6 +441,16 @@ function getOverlayMeta(kind: ClimateSurfaceKind) {
     };
   }
 
+  if (kind === "water") {
+    return {
+      id: "Water Stress" as const,
+      label: "Water Stress",
+      colorProperty: "water" as const,
+      legendGradient:
+        "linear-gradient(90deg, #22d3ee, #facc15, #f97316, #991b1b)",
+    };
+  }
+
   return {
     id: "Heat Risk" as const,
     label: "Heat Risk",
@@ -464,6 +488,8 @@ export function generateClimateOverlays({
       }),
       intensity: clamp(0.84 + (warming - 1) * 0.16 + (year - 2025) / 130, 0.8, 1.42),
       season,
+      year,
+      warming,
       coverage: clamp(
         0.62 +
           (warming - 1) * 0.08 +

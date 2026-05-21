@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import mapboxgl, { type ExpressionSpecification } from "mapbox-gl";
 import AreaRiskInspector, {
   type AreaRiskData,
@@ -9,8 +9,14 @@ import ClimateOverlay from "@/components/ClimateOverlay";
 import type { MapCityNodeData } from "@/components/MapCityNode";
 import type { RegionalMappingData } from "@/components/regionalTypes";
 import {
+  getClimateSurface,
+  type ClimateSurfaceMetadata,
+  type ClimateSurfaceResult,
+} from "@/lib/api/mockClient";
+import {
   createRegionClimateSurface,
   type ClimateOverlayRenderModel,
+  type RegionClimateFeatureCollection,
   type RegionBoundaryFeatureCollection,
 } from "@/lib/climateOverlaySimulation";
 import type { LocalUrbanCellData } from "@/lib/localCellSimulation";
@@ -36,6 +42,15 @@ interface MapboxViewProps {
   }) => void;
   syncedView?: SyncedMapView | null;
   onViewChange?: (view: SyncedMapView) => void;
+  onClimateSurfaceMetadata?: (metadata: ClimateSurfaceMetadata | null) => void;
+  onClimateCellSelect?: (cell: {
+    gridCellId: string;
+    layerType: string;
+    normalizedScore: number;
+    sampledValue: number;
+    rasterSource: string;
+    confidenceLevel: string;
+  }) => void;
 }
 
 const MAPBOX_STYLE = "mapbox://styles/mapbox/dark-v11";
@@ -113,6 +128,22 @@ function getClimateSurfaceColor(
     ] as ExpressionSpecification;
   }
 
+  if (kind === "water") {
+    return [
+      "interpolate",
+      ["linear"],
+      riskValue,
+      0,
+      "rgba(34,211,238,0.12)",
+      42,
+      "rgba(250,204,21,0.3)",
+      68,
+      "rgba(249,115,22,0.44)",
+      96,
+      "rgba(127,29,29,0.58)",
+    ] as ExpressionSpecification;
+  }
+
   return [
     "interpolate",
     ["linear"],
@@ -135,6 +166,7 @@ function ensureRegionClimateLayers(
   regionalMapping: RegionalMappingData,
   regionBoundary: RegionBoundaryFeatureCollection,
   activeOverlay?: ClimateOverlayRenderModel,
+  rasterSurface?: RegionClimateFeatureCollection | null,
 ) {
   removeLegacyClimateLayers(map);
 
@@ -144,10 +176,8 @@ function ensureRegionClimateLayers(
   const boundarySource = map.getSource(REGION_BOUNDARY_SOURCE_ID) as
     | mapboxgl.GeoJSONSource
     | undefined;
-  const climateSurface = createRegionClimateSurface(
-    regionalMapping,
-    activeOverlay,
-  );
+  const climateSurface =
+    rasterSurface ?? createRegionClimateSurface(regionalMapping, activeOverlay);
   const boundary = regionBoundary;
 
   if (climateSource) {
@@ -249,12 +279,69 @@ function getClimateSurfaceOpacity(opacity: number): ExpressionSpecification {
   ] as ExpressionSpecification;
 }
 
+function clipSurfaceToBoundary(
+  surface: RegionClimateFeatureCollection,
+  boundary: RegionBoundaryFeatureCollection,
+): RegionClimateFeatureCollection {
+  const boundaryRing = boundary.features[0]?.geometry.coordinates[0];
+
+  if (!boundaryRing) {
+    return surface;
+  }
+
+  return {
+    ...surface,
+    features: surface.features.filter((feature) => {
+      const ring = feature.geometry.coordinates[0];
+      const center = getRingCenter(ring);
+
+      return isPointInsideRing(center, boundaryRing);
+    }),
+  };
+}
+
+function getRingCenter(ring: number[][]): [number, number] {
+  const totals = ring.reduce(
+    (sum, coordinate) => [sum[0] + coordinate[0], sum[1] + coordinate[1]],
+    [0, 0],
+  );
+
+  return [totals[0] / ring.length, totals[1] / ring.length];
+}
+
+function isPointInsideRing(point: [number, number], ring: number[][]) {
+  const [longitude, latitude] = point;
+  let inside = false;
+
+  for (
+    let index = 0, previous = ring.length - 1;
+    index < ring.length;
+    previous = index++
+  ) {
+    const [currentLongitude, currentLatitude] = ring[index];
+    const [previousLongitude, previousLatitude] = ring[previous];
+    const intersects =
+      currentLatitude > latitude !== previousLatitude > latitude &&
+      longitude <
+        ((previousLongitude - currentLongitude) * (latitude - currentLatitude)) /
+          (previousLatitude - currentLatitude || 1) +
+          currentLongitude;
+
+    if (intersects) {
+      inside = !inside;
+    }
+  }
+
+  return inside;
+}
+
 function applyClimateSurface(
   map: mapboxgl.Map,
   climateOverlayEnabled: boolean,
   activeOverlay: ClimateOverlayRenderModel | undefined,
   regionalMapping: RegionalMappingData | null,
   regionBoundary: RegionBoundaryFeatureCollection | null,
+  rasterSurface: RegionClimateFeatureCollection | null,
 ) {
   if (!regionalMapping || !regionBoundary) {
     removeLegacyClimateLayers(map);
@@ -272,7 +359,13 @@ function applyClimateSurface(
     return;
   }
 
-  ensureRegionClimateLayers(map, regionalMapping, regionBoundary, activeOverlay);
+  ensureRegionClimateLayers(
+    map,
+    regionalMapping,
+    regionBoundary,
+    activeOverlay,
+    rasterSurface,
+  );
 
   if (!climateOverlayEnabled || !activeOverlay) {
     map.setLayoutProperty(REGION_CLIMATE_LAYER_ID, "visibility", "none");
@@ -317,14 +410,19 @@ export default function MapboxView({
   onInspectArea,
   syncedView,
   onViewChange,
+  onClimateSurfaceMetadata,
+  onClimateCellSelect,
 }: MapboxViewProps) {
   const mapContainerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<mapboxgl.Map | null>(null);
   const markersRef = useRef<mapboxgl.Marker[]>([]);
   const regionalMarkerRef = useRef<mapboxgl.Marker | null>(null);
   const localCellMarkerRef = useRef<mapboxgl.Marker | null>(null);
+  const surfaceCacheRef = useRef<Map<string, ClimateSurfaceResult>>(new Map());
   const hasFitInitialBoundsRef = useRef(false);
   const isApplyingSyncedViewRef = useRef(false);
+  const [rasterSurface, setRasterSurface] =
+    useState<RegionClimateFeatureCollection | null>(null);
   const hasMapboxToken = Boolean(process.env.NEXT_PUBLIC_MAPBOX_TOKEN);
 
   useEffect(() => {
@@ -476,6 +574,7 @@ export default function MapboxView({
         climateOverlays[0],
         regionalMapping,
         regionBoundary,
+        rasterSurface,
       );
     };
 
@@ -484,7 +583,189 @@ export default function MapboxView({
     } else {
       map.once("load", updateClimateSurface);
     }
-  }, [climateOverlayEnabled, climateOverlays, regionBoundary, regionalMapping]);
+  }, [
+    climateOverlayEnabled,
+    climateOverlays,
+    rasterSurface,
+    regionBoundary,
+    regionalMapping,
+  ]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+
+    if (!map || !onClimateCellSelect) {
+      return;
+    }
+
+    const handleClimateCellClick = (
+      event: mapboxgl.MapLayerMouseEvent,
+    ) => {
+      const properties = event.features?.[0]?.properties;
+
+      if (!properties?.gridCellId) {
+        return;
+      }
+
+      event.originalEvent.stopPropagation();
+      onClimateCellSelect({
+        gridCellId: String(properties.gridCellId),
+        layerType: String(properties.layerType ?? "heat_risk"),
+        normalizedScore: Number(properties.normalizedScore ?? 0),
+        sampledValue: Number(properties.sampledValue ?? 0),
+        rasterSource: String(properties.rasterSource ?? "unknown"),
+        confidenceLevel: String(properties.confidenceLevel ?? "Unknown"),
+      });
+    };
+    const showClimatePointer = () => {
+      map.getCanvas().style.cursor = "crosshair";
+    };
+    const hideClimatePointer = () => {
+      map.getCanvas().style.cursor = "";
+    };
+
+    const registerHandlers = () => {
+      if (!map.getLayer(REGION_CLIMATE_LAYER_ID)) {
+        return;
+      }
+
+      map.on("click", REGION_CLIMATE_LAYER_ID, handleClimateCellClick);
+      map.on("mouseenter", REGION_CLIMATE_LAYER_ID, showClimatePointer);
+      map.on("mouseleave", REGION_CLIMATE_LAYER_ID, hideClimatePointer);
+    };
+
+    if (map.loaded()) {
+      registerHandlers();
+    } else {
+      map.once("load", registerHandlers);
+    }
+
+    return () => {
+      if (map.getLayer(REGION_CLIMATE_LAYER_ID)) {
+        map.off("click", REGION_CLIMATE_LAYER_ID, handleClimateCellClick);
+        map.off("mouseenter", REGION_CLIMATE_LAYER_ID, showClimatePointer);
+        map.off("mouseleave", REGION_CLIMATE_LAYER_ID, hideClimatePointer);
+      }
+    };
+  }, [climateOverlayEnabled, onClimateCellSelect, rasterSurface, regionBoundary]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    const activeOverlay = climateOverlays[0];
+
+    if (
+      !map ||
+      !climateOverlayEnabled ||
+      !activeOverlay ||
+      !regionalMapping ||
+      !regionBoundary
+    ) {
+      setRasterSurface(null);
+      onClimateSurfaceMetadata?.(null);
+      return;
+    }
+
+    let cancelled = false;
+    let timeoutId = 0;
+
+    const requestSurface = () => {
+      window.clearTimeout(timeoutId);
+      timeoutId = window.setTimeout(async () => {
+        const bounds = map.getBounds();
+        const bbox: [number, number, number, number] = [
+          bounds.getWest(),
+          bounds.getSouth(),
+          bounds.getEast(),
+          bounds.getNorth(),
+        ];
+        const cacheKey = [
+          activeOverlay.kind,
+          activeOverlay.year,
+          activeOverlay.warming.toFixed(1),
+          activeOverlay.season,
+          map.getZoom().toFixed(1),
+          ...bbox.map((value) => value.toFixed(2)),
+        ].join("|");
+        const cachedSurface = surfaceCacheRef.current.get(cacheKey);
+
+        if (cachedSurface) {
+          const clippedCachedSurface = clipSurfaceToBoundary(
+            cachedSurface.geojson,
+            regionBoundary,
+          );
+
+          setRasterSurface(clippedCachedSurface);
+          onClimateSurfaceMetadata?.({
+            ...cachedSurface.metadata,
+            sampledCellCount: clippedCachedSurface.features.length,
+          });
+          return;
+        }
+
+        try {
+          const surface = await getClimateSurface({
+            bbox,
+            zoom: map.getZoom(),
+            layerType: activeOverlay.id,
+            warming: activeOverlay.warming,
+            year: activeOverlay.year,
+            season: activeOverlay.season,
+          });
+          const clippedSurface = clipSurfaceToBoundary(
+            surface.geojson,
+            regionBoundary,
+          );
+
+          if (cancelled) {
+            return;
+          }
+
+          surfaceCacheRef.current.set(cacheKey, surface);
+
+          if (surfaceCacheRef.current.size > 18) {
+            const oldestKey = surfaceCacheRef.current.keys().next().value;
+
+            if (oldestKey) {
+              surfaceCacheRef.current.delete(oldestKey);
+            }
+          }
+
+          setRasterSurface(clippedSurface);
+          onClimateSurfaceMetadata?.({
+            ...surface.metadata,
+            sampledCellCount: clippedSurface.features.length,
+          });
+        } catch {
+          if (!cancelled) {
+            setRasterSurface(null);
+            onClimateSurfaceMetadata?.(null);
+          }
+        }
+      }, 320);
+    };
+
+    if (map.loaded()) {
+      requestSurface();
+    } else {
+      map.once("load", requestSurface);
+    }
+
+    map.on("moveend", requestSurface);
+    map.on("zoomend", requestSurface);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+      map.off("moveend", requestSurface);
+      map.off("zoomend", requestSurface);
+    };
+  }, [
+    climateOverlayEnabled,
+    climateOverlays,
+    onClimateSurfaceMetadata,
+    regionBoundary,
+    regionalMapping,
+  ]);
 
   useEffect(() => {
     const map = mapRef.current;

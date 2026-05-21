@@ -2,6 +2,7 @@ import type { AreaRiskData } from "@/components/AreaRiskInspector";
 import type { MapCityNodeData } from "@/components/MapCityNode";
 import type { RegionalMappingData } from "@/components/regionalTypes";
 import type {
+  RegionClimateFeatureCollection,
   RegionBoundaryFeatureCollection,
   Season,
 } from "@/lib/climateOverlaySimulation";
@@ -28,6 +29,254 @@ export interface RasterSample {
   datasetName: string;
   datasetResolution: string;
   layerType: string;
+}
+
+export interface ClimateSurfaceMetadata {
+  activeRasterLayer: string;
+  renderedGridResolution: string;
+  sampledCellCount: number;
+  climateSurfaceSource: string;
+}
+
+export interface ClimateSurfaceResult {
+  geojson: RegionClimateFeatureCollection;
+  metadata: ClimateSurfaceMetadata;
+}
+
+export interface ClimateSurfacePayload {
+  bbox: [number, number, number, number];
+  zoom: number;
+  layerType: string;
+  warming: number;
+  year: number;
+  season: Season;
+}
+
+export interface ClimateCellDetail {
+  gridCellId: string;
+  layerType: string;
+  year: number;
+  warmingLevel: number;
+  season: string;
+  rawSampledValue: number;
+  normalizedScore: number;
+  scoreExplanation: string;
+  dominantRiskFactor: string;
+  confidenceLevel: string;
+  fallbackSourceUsed: string;
+}
+
+export interface ClimateCellDetailPayload {
+  gridCellId: string;
+  layerType: string;
+  year: number;
+  warming: number;
+  season: Season;
+}
+
+export interface AIExplanation {
+  humanSummary: string;
+  commuteImpact: string;
+  outdoorActivityImpact: string;
+  nighttimeRecovery: string;
+  vulnerableGroupsNote: string;
+  confidenceNote: string;
+  explanationSource: "template" | "llm" | string;
+}
+
+export interface AIExplanationPayload {
+  city: MapCityNodeData;
+  year: number;
+  warming: number;
+  season: Season;
+  timeOfDay: string;
+  outdoorComfort: string;
+  climateRegionType: string;
+  dominantRiskDriver: string;
+  selectedGridCell?: ClimateCellDetail | null;
+  interactionSummary?: ClimateInteractionResult | null;
+}
+
+export interface SavedScenario {
+  id: number;
+  name: string;
+  locationName: string;
+  region: string;
+  latitude: number;
+  longitude: number;
+  year: number;
+  warmingLevel: number;
+  season: Season;
+  timeOfDay: string;
+  activeLayer: string;
+  livabilityScore: number;
+  heatRisk: string;
+  floodRisk: string;
+  outdoorComfort: string;
+  createdAt: string;
+}
+
+export type WarmingPathway = "optimistic" | "moderate" | "severe";
+
+export interface ClimateTimelineSnapshot {
+  year: number;
+  warmingLevel: number;
+  livabilityScore: number;
+  heatScore: number;
+  floodScore: number;
+  outdoorComfortScore: number;
+  heatRisk: string;
+  floodRisk: string;
+  outdoorComfort: string;
+  dominantRiskDriver: string;
+  rasterGridCellId: string | null;
+  rasterSampledValue: number | null;
+  rasterSource: string | null;
+}
+
+export interface ClimateTimelineResult {
+  locationName: string;
+  warmingPathway: WarmingPathway;
+  layerType: string;
+  season: Season;
+  startYear: number;
+  endYear: number;
+  temporalResolution: string;
+  valueMode: string;
+  climateEvolutionSummary: string;
+  snapshots: ClimateTimelineSnapshot[];
+}
+
+export interface ClimateTimelinePayload {
+  location: string;
+  startYear: number;
+  endYear: number;
+  warmingPathway: WarmingPathway;
+  layerType: string;
+  season: Season;
+}
+
+export interface ClimateInteractionResult {
+  compositeRiskScore: number;
+  dominantInteractionChain: string;
+  resilienceScore: number;
+  infrastructurePressure: number;
+  humanExposureScore: number;
+  cascadingRisks: string[];
+  mitigationFactors: string[];
+  visualIndicators: string[];
+  activeInteractionModel: string;
+  interactionWeights: Record<string, number>;
+  resilienceModifiers: Record<string, number>;
+  cascadingChainDepth: number;
+}
+
+export interface ClimateInteractionPayload {
+  city: MapCityNodeData;
+  year: number;
+  warming: number;
+  season: Season;
+  timeOfDay: string;
+  activeLayers: string[];
+  selectedGridCell?: ClimateCellDetail | null;
+}
+
+export interface RecommendationPreferences {
+  targetYear: number;
+  warmingTolerance: number;
+  heatSensitivity: number;
+  respiratorySensitivity: number;
+  floodRiskTolerance: number;
+  outdoorLifestylePreference: number;
+  urbanVsQuieterPreference: "urban" | "quieter" | "balanced";
+  coastalPreference: "coastal" | "inland" | "neutral";
+  familyElderlySensitivity: number;
+  remoteWorkFlexibility: number;
+}
+
+export interface RecommendedRegion {
+  regionName: string;
+  locationName: string;
+  latitude: number;
+  longitude: number;
+  suitabilityScore: number;
+  resilienceScore: number;
+  dominantFutureRisks: string[];
+  expectedLivabilityTrajectory: string;
+  majorTradeoffs: string[];
+  explanation: string;
+}
+
+export interface RegionComparisonProjection {
+  locationName: string;
+  region: string;
+  livabilityScore: number;
+  heatRisk: string;
+  floodRisk: string;
+  outdoorComfort: string;
+  resilienceScore: number;
+  dominantRiskDriver: string;
+}
+
+export interface RecommendationResult {
+  currentLocation: RegionComparisonProjection;
+  recommendedRegions: RecommendedRegion[];
+  fallbackAlternatives: RecommendedRegion[];
+  comparisonProjection: RegionComparisonProjection[];
+  explanationSummary: string;
+  timelineNarratives: string[];
+  recommendationModel: string;
+}
+
+export interface RecommendationPayload {
+  city: MapCityNodeData;
+  preferences: RecommendationPreferences;
+}
+
+export interface AdvisorExtractedInputs {
+  primaryLocation: string;
+  comparisonLocations: string[];
+  targetYear: number;
+  warmingLevel: number;
+  season: Season;
+  healthConstraints: string[];
+  lifestyleConstraints: string[];
+  relocationIntent: boolean;
+  riskTolerance: string;
+}
+
+export interface AdvisorResult {
+  interpretedQuery: string;
+  extractedInputs: AdvisorExtractedInputs;
+  primaryLocationScore: ScenarioScoreResult;
+  recommendationSummary: string;
+  keyRisks: string[];
+  suggestedComparisonLocations: RecommendedRegion[];
+  fallbackLocations: RecommendedRegion[];
+  humanExplanation: AIExplanation;
+  confidenceNote: string;
+}
+
+export interface AdvisorQueryPayload {
+  queryText: string;
+  selectedPreferences: string[];
+  currentScenarioState?: {
+    location: string;
+    year: number;
+    warming: number;
+    season: Season;
+  };
+}
+
+export interface SaveScenarioPayload {
+  name: string;
+  city: MapCityNodeData;
+  year: number;
+  warming: number;
+  season: Season;
+  timeOfDay: string;
+  activeLayer: string;
+  outdoorComfort: string;
 }
 
 export interface ScoreBreakdown {
@@ -169,6 +418,161 @@ interface ApiRegionBoundaryResult {
   db_boundary_id?: number | null;
   polygon: [number, number][];
   geojson?: RegionBoundaryFeatureCollection | null;
+}
+
+interface ApiClimateSurfaceResult {
+  layer_type: string;
+  bbox: number[];
+  zoom: number;
+  grid_resolution: string;
+  sampled_cell_count: number;
+  climate_surface_source: string;
+  geojson: RegionClimateFeatureCollection;
+}
+
+interface ApiClimateCellDetailResult {
+  grid_cell_id: string;
+  layer_type: string;
+  year: number;
+  warming_level: number;
+  season: string;
+  raw_sampled_value: number;
+  normalized_score: number;
+  score_explanation: string;
+  dominant_risk_factor: string;
+  confidence_level: string;
+  fallback_source_used: string;
+}
+
+interface ApiExplanationResult {
+  human_summary: string;
+  commute_impact: string;
+  outdoor_activity_impact: string;
+  nighttime_recovery: string;
+  vulnerable_groups_note: string;
+  confidence_note: string;
+  explanation_source: string;
+}
+
+interface ApiSavedScenario {
+  id: number;
+  name: string;
+  location_name: string;
+  region: string;
+  latitude: number;
+  longitude: number;
+  year: number;
+  warming_level: number;
+  season: string;
+  time_of_day: string;
+  active_layer: string;
+  livability_score: number;
+  heat_risk: string;
+  flood_risk: string;
+  outdoor_comfort: string;
+  created_at: string;
+}
+
+interface ApiClimateTimelineSnapshot {
+  year: number;
+  warming_level: number;
+  livability_score: number;
+  heat_score: number;
+  flood_score: number;
+  outdoor_comfort_score: number;
+  heat_risk: string;
+  flood_risk: string;
+  outdoor_comfort: string;
+  dominant_risk_driver: string;
+  raster_grid_cell_id?: string | null;
+  raster_sampled_value?: number | null;
+  raster_source?: string | null;
+}
+
+interface ApiClimateTimelineResult {
+  location: ApiLocationResult;
+  warming_pathway: WarmingPathway;
+  layer_type: string;
+  season: string;
+  start_year: number;
+  end_year: number;
+  temporal_resolution: string;
+  value_mode: string;
+  climate_evolution_summary: string;
+  snapshots: ApiClimateTimelineSnapshot[];
+}
+
+interface ApiClimateInteractionResult {
+  composite_risk_score: number;
+  dominant_interaction_chain: string;
+  resilience_score: number;
+  infrastructure_pressure: number;
+  human_exposure_score: number;
+  cascading_risks: string[];
+  mitigation_factors: string[];
+  visual_indicators: string[];
+  active_interaction_model: string;
+  interaction_weights: Record<string, number>;
+  resilience_modifiers: Record<string, number>;
+  cascading_chain_depth: number;
+}
+
+interface ApiRecommendedRegion {
+  region_name: string;
+  location_name: string;
+  latitude: number;
+  longitude: number;
+  suitability_score: number;
+  resilience_score: number;
+  dominant_future_risks: string[];
+  expected_livability_trajectory: string;
+  major_tradeoffs: string[];
+  explanation: string;
+}
+
+interface ApiRegionComparisonProjection {
+  location_name: string;
+  region: string;
+  livability_score: number;
+  heat_risk: string;
+  flood_risk: string;
+  outdoor_comfort: string;
+  resilience_score: number;
+  dominant_risk_driver: string;
+}
+
+interface ApiRecommendationResult {
+  current_location: ApiRegionComparisonProjection;
+  recommended_regions: ApiRecommendedRegion[];
+  fallback_alternatives: ApiRecommendedRegion[];
+  comparison_projection: ApiRegionComparisonProjection[];
+  explanation_summary: string;
+  timeline_narratives: string[];
+  recommendation_model: string;
+}
+
+interface ApiAdvisorExtractedInputs {
+  primary_location: string;
+  comparison_locations: string[];
+  target_year: number;
+  warming_level: number;
+  season: string;
+  health_constraints: string[];
+  lifestyle_constraints: string[];
+  relocation_intent: boolean;
+  risk_tolerance: string;
+}
+
+interface ApiAdvisorResult {
+  interpreted_query: string;
+  extracted_inputs: ApiAdvisorExtractedInputs;
+  primary_location_score: ApiScenarioScoreResult;
+  recommendation_summary: string;
+  key_risks: string[];
+  suggested_comparison_locations: ApiRecommendedRegion[];
+  fallback_locations: ApiRecommendedRegion[];
+  human_explanation: ApiExplanationResult;
+  confidence_note: string;
 }
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
@@ -359,6 +763,79 @@ export async function getHumanImpactExplanation({
   return score.summary;
 }
 
+export async function getAIExplanation({
+  city,
+  year,
+  warming,
+  season,
+  timeOfDay,
+  outdoorComfort,
+  climateRegionType,
+  dominantRiskDriver,
+  selectedGridCell,
+  interactionSummary,
+}: AIExplanationPayload): Promise<AIExplanation> {
+  const result = await requestJson<ApiExplanationResult>("/api/explain", {
+    method: "POST",
+    body: JSON.stringify({
+      location: city.name,
+      region: city.region,
+      climate_region_type: climateRegionType,
+      year,
+      warming_level: warming,
+      season,
+      time_of_day: timeOfDay,
+      livability_score: city.livabilityScore,
+      heat_risk: city.heatRisk,
+      flood_risk: city.floodRisk,
+      outdoor_comfort: outdoorComfort,
+      dominant_risk_driver: dominantRiskDriver,
+      selected_grid_cell: selectedGridCell
+        ? {
+            grid_cell_id: selectedGridCell.gridCellId,
+            layer_type: selectedGridCell.layerType,
+            year: selectedGridCell.year,
+            warming_level: selectedGridCell.warmingLevel,
+            season: selectedGridCell.season,
+            raw_sampled_value: selectedGridCell.rawSampledValue,
+            normalized_score: selectedGridCell.normalizedScore,
+            score_explanation: selectedGridCell.scoreExplanation,
+            dominant_risk_factor: selectedGridCell.dominantRiskFactor,
+            confidence_level: selectedGridCell.confidenceLevel,
+            fallback_source_used: selectedGridCell.fallbackSourceUsed,
+          }
+        : null,
+      interaction_summary: interactionSummary
+        ? {
+            composite_risk_score: interactionSummary.compositeRiskScore,
+            dominant_interaction_chain:
+              interactionSummary.dominantInteractionChain,
+            resilience_score: interactionSummary.resilienceScore,
+            infrastructure_pressure: interactionSummary.infrastructurePressure,
+            human_exposure_score: interactionSummary.humanExposureScore,
+            cascading_risks: interactionSummary.cascadingRisks,
+            mitigation_factors: interactionSummary.mitigationFactors,
+            visual_indicators: interactionSummary.visualIndicators,
+            active_interaction_model: interactionSummary.activeInteractionModel,
+            interaction_weights: interactionSummary.interactionWeights,
+            resilience_modifiers: interactionSummary.resilienceModifiers,
+            cascading_chain_depth: interactionSummary.cascadingChainDepth,
+          }
+        : null,
+    }),
+  });
+
+  return {
+    humanSummary: result.human_summary,
+    commuteImpact: result.commute_impact,
+    outdoorActivityImpact: result.outdoor_activity_impact,
+    nighttimeRecovery: result.nighttime_recovery,
+    vulnerableGroupsNote: result.vulnerable_groups_note,
+    confidenceNote: result.confidence_note,
+    explanationSource: result.explanation_source,
+  };
+}
+
 export async function compareScenarios({
   city,
   scenarioA,
@@ -464,6 +941,367 @@ export async function getRegionBoundary(
       },
     ],
   };
+}
+
+export async function getClimateSurface({
+  bbox,
+  zoom,
+  layerType,
+  warming,
+  year,
+  season,
+}: ClimateSurfacePayload): Promise<ClimateSurfaceResult> {
+  const params = new URLSearchParams({
+    bbox: bbox.map((value) => value.toFixed(5)).join(","),
+    zoom: zoom.toFixed(2),
+    layer_type: layerType,
+    warming_level: warming.toFixed(2),
+    year: String(year),
+    season,
+  });
+  const result = await requestJson<ApiClimateSurfaceResult>(
+    `/api/climate/surface?${params.toString()}`,
+  );
+
+  return {
+    geojson: result.geojson,
+    metadata: {
+      activeRasterLayer: result.layer_type,
+      renderedGridResolution: result.grid_resolution,
+      sampledCellCount: result.sampled_cell_count,
+      climateSurfaceSource: result.climate_surface_source,
+    },
+  };
+}
+
+export async function getClimateCellDetail({
+  gridCellId,
+  layerType,
+  year,
+  warming,
+  season,
+}: ClimateCellDetailPayload): Promise<ClimateCellDetail> {
+  const params = new URLSearchParams({
+    grid_cell_id: gridCellId,
+    layer_type: layerType,
+    year: String(year),
+    warming_level: warming.toFixed(2),
+    season,
+  });
+  const result = await requestJson<ApiClimateCellDetailResult>(
+    `/api/climate/cell-detail?${params.toString()}`,
+  );
+
+  return {
+    gridCellId: result.grid_cell_id,
+    layerType: result.layer_type,
+    year: result.year,
+    warmingLevel: result.warming_level,
+    season: result.season,
+    rawSampledValue: result.raw_sampled_value,
+    normalizedScore: result.normalized_score,
+    scoreExplanation: result.score_explanation,
+    dominantRiskFactor: result.dominant_risk_factor,
+    confidenceLevel: result.confidence_level,
+    fallbackSourceUsed: result.fallback_source_used,
+  };
+}
+
+export async function getClimateTimeline({
+  location,
+  startYear,
+  endYear,
+  warmingPathway,
+  layerType,
+  season,
+}: ClimateTimelinePayload): Promise<ClimateTimelineResult> {
+  const params = new URLSearchParams({
+    location,
+    start_year: String(startYear),
+    end_year: String(endYear),
+    warming_pathway: warmingPathway,
+    layer_type: layerType,
+    season,
+  });
+  const result = await requestJson<ApiClimateTimelineResult>(
+    `/api/climate/timeline?${params.toString()}`,
+  );
+
+  return {
+    locationName: result.location.location_name,
+    warmingPathway: result.warming_pathway,
+    layerType: result.layer_type,
+    season: result.season as Season,
+    startYear: result.start_year,
+    endYear: result.end_year,
+    temporalResolution: result.temporal_resolution,
+    valueMode: result.value_mode,
+    climateEvolutionSummary: result.climate_evolution_summary,
+    snapshots: result.snapshots.map((snapshot) => ({
+      year: snapshot.year,
+      warmingLevel: snapshot.warming_level,
+      livabilityScore: snapshot.livability_score,
+      heatScore: snapshot.heat_score,
+      floodScore: snapshot.flood_score,
+      outdoorComfortScore: snapshot.outdoor_comfort_score,
+      heatRisk: snapshot.heat_risk,
+      floodRisk: snapshot.flood_risk,
+      outdoorComfort: snapshot.outdoor_comfort,
+      dominantRiskDriver: snapshot.dominant_risk_driver,
+      rasterGridCellId: snapshot.raster_grid_cell_id ?? null,
+      rasterSampledValue: snapshot.raster_sampled_value ?? null,
+      rasterSource: snapshot.raster_source ?? null,
+    })),
+  };
+}
+
+export async function getCompositeRisk({
+  city,
+  year,
+  warming,
+  season,
+  timeOfDay,
+  activeLayers,
+  selectedGridCell,
+}: ClimateInteractionPayload): Promise<ClimateInteractionResult> {
+  const result = await requestJson<ApiClimateInteractionResult>(
+    "/api/climate/composite-risk",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        scenario: {
+          location: city.name,
+          year,
+          warmingLevel: warming,
+          season,
+          timeOfDay,
+          overlayTypes: activeLayers,
+        },
+        active_layers: activeLayers,
+        location: city.name,
+        selected_climate_cell: selectedGridCell
+          ? {
+              grid_cell_id: selectedGridCell.gridCellId,
+              layer_type: selectedGridCell.layerType,
+              year: selectedGridCell.year,
+              warming_level: selectedGridCell.warmingLevel,
+              season: selectedGridCell.season,
+              raw_sampled_value: selectedGridCell.rawSampledValue,
+              normalized_score: selectedGridCell.normalizedScore,
+              score_explanation: selectedGridCell.scoreExplanation,
+              dominant_risk_factor: selectedGridCell.dominantRiskFactor,
+              confidence_level: selectedGridCell.confidenceLevel,
+              fallback_source_used: selectedGridCell.fallbackSourceUsed,
+            }
+          : null,
+      }),
+    },
+  );
+
+  return {
+    compositeRiskScore: result.composite_risk_score,
+    dominantInteractionChain: result.dominant_interaction_chain,
+    resilienceScore: result.resilience_score,
+    infrastructurePressure: result.infrastructure_pressure,
+    humanExposureScore: result.human_exposure_score,
+    cascadingRisks: result.cascading_risks,
+    mitigationFactors: result.mitigation_factors,
+    visualIndicators: result.visual_indicators,
+    activeInteractionModel: result.active_interaction_model,
+    interactionWeights: result.interaction_weights,
+    resilienceModifiers: result.resilience_modifiers,
+    cascadingChainDepth: result.cascading_chain_depth,
+  };
+}
+
+export async function getRecommendations({
+  city,
+  preferences,
+}: RecommendationPayload): Promise<RecommendationResult> {
+  const result = await requestJson<ApiRecommendationResult>("/api/recommendations", {
+    method: "POST",
+    body: JSON.stringify({
+      current_location: city.name,
+      target_year: preferences.targetYear,
+      warming_tolerance: preferences.warmingTolerance,
+      heat_sensitivity: preferences.heatSensitivity,
+      respiratory_sensitivity: preferences.respiratorySensitivity,
+      flood_risk_tolerance: preferences.floodRiskTolerance,
+      outdoor_lifestyle_preference: preferences.outdoorLifestylePreference,
+      urban_vs_quieter_preference: preferences.urbanVsQuieterPreference,
+      coastal_preference: preferences.coastalPreference,
+      family_elderly_sensitivity: preferences.familyElderlySensitivity,
+      remote_work_flexibility: preferences.remoteWorkFlexibility,
+    }),
+  });
+
+  return {
+    currentLocation: apiProjectionToClient(result.current_location),
+    recommendedRegions: result.recommended_regions.map(apiRegionToClient),
+    fallbackAlternatives: result.fallback_alternatives.map(apiRegionToClient),
+    comparisonProjection: result.comparison_projection.map(apiProjectionToClient),
+    explanationSummary: result.explanation_summary,
+    timelineNarratives: result.timeline_narratives,
+    recommendationModel: result.recommendation_model,
+  };
+}
+
+export async function queryClimateAdvisor({
+  queryText,
+  selectedPreferences,
+  currentScenarioState,
+}: AdvisorQueryPayload): Promise<AdvisorResult> {
+  const result = await requestJson<ApiAdvisorResult>("/api/advisor/query", {
+    method: "POST",
+    body: JSON.stringify({
+      query_text: queryText,
+      selected_preferences: selectedPreferences,
+      current_scenario_state: currentScenarioState
+        ? {
+            location: currentScenarioState.location,
+            year: currentScenarioState.year,
+            warming: currentScenarioState.warming,
+            season: currentScenarioState.season,
+          }
+        : null,
+    }),
+  });
+
+  return {
+    interpretedQuery: result.interpreted_query,
+    extractedInputs: {
+      primaryLocation: result.extracted_inputs.primary_location,
+      comparisonLocations: result.extracted_inputs.comparison_locations,
+      targetYear: result.extracted_inputs.target_year,
+      warmingLevel: result.extracted_inputs.warming_level,
+      season: result.extracted_inputs.season as Season,
+      healthConstraints: result.extracted_inputs.health_constraints,
+      lifestyleConstraints: result.extracted_inputs.lifestyle_constraints,
+      relocationIntent: result.extracted_inputs.relocation_intent,
+      riskTolerance: result.extracted_inputs.risk_tolerance,
+    },
+    primaryLocationScore: apiScenarioToScore(
+      apiLocationToCity(result.primary_location_score.location),
+      result.primary_location_score,
+    ),
+    recommendationSummary: result.recommendation_summary,
+    keyRisks: result.key_risks,
+    suggestedComparisonLocations:
+      result.suggested_comparison_locations.map(apiRegionToClient),
+    fallbackLocations: result.fallback_locations.map(apiRegionToClient),
+    humanExplanation: {
+      humanSummary: result.human_explanation.human_summary,
+      commuteImpact: result.human_explanation.commute_impact,
+      outdoorActivityImpact: result.human_explanation.outdoor_activity_impact,
+      nighttimeRecovery: result.human_explanation.nighttime_recovery,
+      vulnerableGroupsNote: result.human_explanation.vulnerable_groups_note,
+      confidenceNote: result.human_explanation.confidence_note,
+      explanationSource: result.human_explanation.explanation_source,
+    },
+    confidenceNote: result.confidence_note,
+  };
+}
+
+function apiRegionToClient(region: ApiRecommendedRegion): RecommendedRegion {
+  return {
+    regionName: region.region_name,
+    locationName: region.location_name,
+    latitude: region.latitude,
+    longitude: region.longitude,
+    suitabilityScore: region.suitability_score,
+    resilienceScore: region.resilience_score,
+    dominantFutureRisks: region.dominant_future_risks,
+    expectedLivabilityTrajectory: region.expected_livability_trajectory,
+    majorTradeoffs: region.major_tradeoffs,
+    explanation: region.explanation,
+  };
+}
+
+function apiProjectionToClient(
+  projection: ApiRegionComparisonProjection,
+): RegionComparisonProjection {
+  return {
+    locationName: projection.location_name,
+    region: projection.region,
+    livabilityScore: projection.livability_score,
+    heatRisk: projection.heat_risk,
+    floodRisk: projection.flood_risk,
+    outdoorComfort: projection.outdoor_comfort,
+    resilienceScore: projection.resilience_score,
+    dominantRiskDriver: projection.dominant_risk_driver,
+  };
+}
+
+function apiSavedScenarioToClient(scenario: ApiSavedScenario): SavedScenario {
+  return {
+    id: scenario.id,
+    name: scenario.name,
+    locationName: scenario.location_name,
+    region: scenario.region,
+    latitude: scenario.latitude,
+    longitude: scenario.longitude,
+    year: scenario.year,
+    warmingLevel: scenario.warming_level,
+    season: scenario.season as Season,
+    timeOfDay: scenario.time_of_day,
+    activeLayer: scenario.active_layer,
+    livabilityScore: scenario.livability_score,
+    heatRisk: scenario.heat_risk,
+    floodRisk: scenario.flood_risk,
+    outdoorComfort: scenario.outdoor_comfort,
+    createdAt: scenario.created_at,
+  };
+}
+
+export async function saveScenario({
+  name,
+  city,
+  year,
+  warming,
+  season,
+  timeOfDay,
+  activeLayer,
+  outdoorComfort,
+}: SaveScenarioPayload): Promise<SavedScenario> {
+  const result = await requestJson<ApiSavedScenario>("/api/scenarios/save", {
+    method: "POST",
+    body: JSON.stringify({
+      name,
+      location_name: city.name,
+      region: city.region,
+      latitude: city.latitude,
+      longitude: city.longitude,
+      year,
+      warming_level: warming,
+      season,
+      time_of_day: timeOfDay,
+      active_layer: activeLayer,
+      livability_score: city.livabilityScore,
+      heat_risk: city.heatRisk,
+      flood_risk: city.floodRisk,
+      outdoor_comfort: outdoorComfort,
+    }),
+  });
+
+  return apiSavedScenarioToClient(result);
+}
+
+export async function listSavedScenarios(): Promise<SavedScenario[]> {
+  const results = await requestJson<ApiSavedScenario[]>("/api/scenarios");
+
+  return results.map(apiSavedScenarioToClient);
+}
+
+export async function getSavedScenario(id: number): Promise<SavedScenario> {
+  const result = await requestJson<ApiSavedScenario>(`/api/scenarios/${id}`);
+
+  return apiSavedScenarioToClient(result);
+}
+
+export async function deleteSavedScenario(id: number): Promise<void> {
+  await requestJson<{ deleted: boolean }>(`/api/scenarios/${id}`, {
+    method: "DELETE",
+  });
 }
 
 export function getLocalAreaRisk(x: number, y: number): AreaRiskData {

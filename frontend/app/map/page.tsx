@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { ArrowLeft, Layers, Pause, Play, SkipBack, SkipForward, X } from "lucide-react";
 import type { AreaRiskData } from "@/components/AreaRiskInspector";
@@ -24,11 +24,30 @@ import {
 } from "@/lib/climateOverlaySimulation";
 import {
   compareScenarios,
+  getAIExplanation,
+  getClimateCellDetail,
+  getClimateTimeline,
+  getCompositeRisk,
+  getRecommendations,
+  queryClimateAdvisor,
+  type AIExplanation,
+  type AdvisorResult,
+  type ClimateSurfaceMetadata,
+  type ClimateCellDetail,
+  type ClimateInteractionResult,
+  type ClimateTimelineResult,
+  type RecommendationPreferences,
+  type RecommendationResult,
+  type WarmingPathway,
   getLocalAreaRisk,
   getRegionBoundary,
   getScenarioScore,
+  listSavedScenarios,
+  deleteSavedScenario,
+  saveScenario,
   searchLocation,
   type ComparisonMetrics,
+  type SavedScenario,
   type ScenarioScoreResult,
 } from "@/lib/api/mockClient";
 import {
@@ -45,9 +64,12 @@ import {
 const cityNodes = knownCityNodes;
 const layerNames = climateLayerNames;
 const years = scenarioYears;
+const playbackYearRange = { start: 2025, end: 2100 };
+const playbackSpeeds = [0.5, 1, 2, 4] as const;
 
 type LayerState = Record<(typeof layerNames)[number], boolean>;
 type InspectedScenario = "A" | "B";
+type PlaybackSpeed = (typeof playbackSpeeds)[number];
 type LoadingState = {
   searching: boolean;
   scenario: boolean;
@@ -61,6 +83,20 @@ const initialComparisonMetrics: ComparisonMetrics = {
   scientificMetric: "Wet bulb anomaly +0.0C",
   humanTranslation:
     "Scenario comparison will update after the backend response is received.",
+};
+
+const initialAIExplanation: AIExplanation = {
+  humanSummary:
+    "Human impact translation will update after the backend explanation service responds.",
+  commuteImpact: "Commute exposure will update with the selected scenario.",
+  outdoorActivityImpact:
+    "Outdoor activity impacts will update with the selected scenario.",
+  nighttimeRecovery: "Nighttime recovery guidance will update with the scenario.",
+  vulnerableGroupsNote:
+    "Vulnerability guidance will update once climate facts are loaded.",
+  confidenceNote:
+    "Explanation confidence will update after backend validation.",
+  explanationSource: "template",
 };
 
 function createInitialScenarioScore(city: MapCityNodeData): ScenarioScoreResult {
@@ -215,6 +251,7 @@ export default function MapPage() {
   const [manualWarming, setManualWarming] = useState(2.1);
   const [selectedSeason, setSelectedSeason] = useState<Season>("Summer");
   const [climateOverlayEnabled, setClimateOverlayEnabled] = useState(false);
+  const [overlayOpacity, setOverlayOpacity] = useState(0.88);
   const [focusedCityName, setFocusedCityName] = useState(selectedCity.name);
   const [focusRequestId, setFocusRequestId] = useState(0);
   const [comparisonMode, setComparisonMode] = useState(false);
@@ -257,12 +294,39 @@ export default function MapPage() {
   );
   const [regionBoundary, setRegionBoundary] =
     useState<RegionBoundaryFeatureCollection | null>(null);
+  const [climateSurfaceMetadata, setClimateSurfaceMetadata] =
+    useState<ClimateSurfaceMetadata | null>(null);
+  const [selectedClimateCell, setSelectedClimateCell] =
+    useState<ClimateCellDetail | null>(null);
+  const [aiExplanation, setAiExplanation] =
+    useState<AIExplanation>(initialAIExplanation);
+  const [climateInteraction, setClimateInteraction] =
+    useState<ClimateInteractionResult | null>(null);
+  const [recommendationResult, setRecommendationResult] =
+    useState<RecommendationResult | null>(null);
+  const [recommendationLoading, setRecommendationLoading] = useState(false);
+  const [advisorResult, setAdvisorResult] = useState<AdvisorResult | null>(null);
+  const [advisorLoading, setAdvisorLoading] = useState(false);
+  const [savedScenarios, setSavedScenarios] = useState<SavedScenario[]>([]);
+  const [savingScenario, setSavingScenario] = useState(false);
+  const [timelinePlaybackEnabled, setTimelinePlaybackEnabled] = useState(false);
+  const [timelinePlaying, setTimelinePlaying] = useState(false);
+  const [playbackSpeed, setPlaybackSpeed] = useState<PlaybackSpeed>(1);
+  const [warmingPathway, setWarmingPathway] =
+    useState<WarmingPathway>("moderate");
+  const [timelineData, setTimelineData] =
+    useState<ClimateTimelineResult | null>(null);
+  const timelineCacheRef = useRef<Map<string, ClimateTimelineResult>>(new Map());
 
   const activeLayers = layerNames.filter((layerName) => layers[layerName]);
   const currentDemoStep = demoActive ? demoSteps[demoIndex] : null;
-  const predictedWarming = predictedWarmingByYear[selectedYear];
+  const predictedWarming = predictedWarmingByYear[selectedYear] ?? manualWarming;
   const activeWarming =
     scenarioMode === "predicted" ? predictedWarming : manualWarming;
+  const activePlaybackLayer = activeLayers[0] ?? "Heat Risk";
+  const currentTimelineSnapshot =
+    timelineData?.snapshots.find((snapshot) => snapshot.year === selectedYear) ??
+    null;
   const scenarioCity = scenarioScore.city;
   const outdoorComfort = scenarioScore.outdoorComfort;
   const inspectedScenarioConfig =
@@ -290,6 +354,7 @@ export default function MapPage() {
   const panelActiveOverlays = comparisonMode
     ? layerNames.filter((layerName) => inspectedScenarioConfig.overlays[layerName])
     : activeLayers;
+  const panelActiveOverlayKey = panelActiveOverlays.join("|");
   const scenarioASnapshot = {
     label: "Scenario A",
     year: scenarioA.year,
@@ -319,13 +384,17 @@ export default function MapPage() {
             season: selectedSeason,
             enabledLayers: layers,
             localUrbanCell,
-          })
+          }).map((overlay) => ({
+            ...overlay,
+            opacity: overlay.opacity * overlayOpacity,
+          }))
         : [],
     [
       activeWarming,
       climateOverlayEnabled,
       layers,
       localUrbanCell,
+      overlayOpacity,
       selectedSeason,
       selectedYear,
     ],
@@ -339,9 +408,12 @@ export default function MapPage() {
             season: scenarioA.season,
             enabledLayers: scenarioA.overlays,
             localUrbanCell,
-          })
+          }).map((overlay) => ({
+            ...overlay,
+            opacity: overlay.opacity * overlayOpacity,
+          }))
         : [],
-    [climateOverlayEnabled, localUrbanCell, scenarioA],
+    [climateOverlayEnabled, localUrbanCell, overlayOpacity, scenarioA],
   );
   const scenarioBClimateOverlays = useMemo(
     () =>
@@ -352,9 +424,12 @@ export default function MapPage() {
             season: scenarioB.season,
             enabledLayers: scenarioB.overlays,
             localUrbanCell,
-          })
+          }).map((overlay) => ({
+            ...overlay,
+            opacity: overlay.opacity * overlayOpacity,
+          }))
         : [],
-    [climateOverlayEnabled, localUrbanCell, scenarioB],
+    [climateOverlayEnabled, localUrbanCell, overlayOpacity, scenarioB],
   );
 
   useEffect(() => {
@@ -533,6 +608,248 @@ export default function MapPage() {
   useEffect(() => {
     let cancelled = false;
 
+    listSavedScenarios()
+      .then((scenarios) => {
+        if (!cancelled) {
+          setSavedScenarios(scenarios);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSavedScenarios([]);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    setSelectedClimateCell(null);
+  }, [climateOverlayEnabled, regionalMapping]);
+
+  useEffect(() => {
+    let cancelled = false;
+    let timeoutId = 0;
+
+    if (!timelinePlaybackEnabled) {
+      return;
+    }
+
+    const cacheKey = [
+      selectedCity.name,
+      warmingPathway,
+      activePlaybackLayer,
+      selectedSeason,
+      playbackYearRange.start,
+      playbackYearRange.end,
+    ].join("|");
+    const cachedTimeline = timelineCacheRef.current.get(cacheKey);
+
+    if (cachedTimeline) {
+      setTimelineData(cachedTimeline);
+      return;
+    }
+
+    setLoadingState((current) => ({ ...current, scenario: true }));
+    setTimelineData(null);
+    setApiError(null);
+
+    timeoutId = window.setTimeout(() => {
+      getClimateTimeline({
+        location: selectedCity.name,
+        startYear: playbackYearRange.start,
+        endYear: playbackYearRange.end,
+        warmingPathway,
+        layerType: activePlaybackLayer,
+        season: selectedSeason,
+      })
+        .then((timeline) => {
+          if (cancelled) {
+            return;
+          }
+
+          timelineCacheRef.current.set(cacheKey, timeline);
+
+          if (timelineCacheRef.current.size > 8) {
+            const oldestKey = timelineCacheRef.current.keys().next().value;
+
+            if (oldestKey) {
+              timelineCacheRef.current.delete(oldestKey);
+            }
+          }
+
+          setTimelineData(timeline);
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setTimelineData(null);
+            setApiError("Climate timeline could not be loaded from the backend.");
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setLoadingState((current) => ({ ...current, scenario: false }));
+          }
+        });
+    }, 280);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timeoutId);
+    };
+  }, [
+    activePlaybackLayer,
+    selectedCity.name,
+    selectedSeason,
+    timelinePlaybackEnabled,
+    warmingPathway,
+  ]);
+
+  useEffect(() => {
+    if (!timelinePlaybackEnabled || !currentTimelineSnapshot) {
+      return;
+    }
+
+    setScenarioMode("manual");
+    setManualWarming(currentTimelineSnapshot.warmingLevel);
+  }, [currentTimelineSnapshot, timelinePlaybackEnabled]);
+
+  useEffect(() => {
+    if (!timelinePlaybackEnabled || !timelinePlaying) {
+      return;
+    }
+
+    const intervalId = window.setInterval(() => {
+      setSelectedYear((currentYear) =>
+        currentYear >= playbackYearRange.end
+          ? playbackYearRange.start
+          : currentYear + 1,
+      );
+    }, Math.max(650, 2200 / playbackSpeed));
+
+    return () => window.clearInterval(intervalId);
+  }, [playbackSpeed, timelinePlaybackEnabled, timelinePlaying]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    getCompositeRisk({
+      city: panelCity,
+      year: panelYear,
+      warming: panelWarming,
+      season: panelScoreBreakdown.seasonModifier as Season,
+      timeOfDay: panelScoreBreakdown.timeOfDayModifier,
+      activeLayers: [...panelActiveOverlays],
+      selectedGridCell: selectedClimateCell,
+    })
+      .then((interaction) => {
+        if (!cancelled) {
+          setClimateInteraction(interaction);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setClimateInteraction(null);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    panelActiveOverlayKey,
+    panelCity,
+    panelScoreBreakdown.seasonModifier,
+    panelScoreBreakdown.timeOfDayModifier,
+    panelWarming,
+    panelYear,
+    selectedClimateCell,
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (
+      timelinePlaybackEnabled &&
+      timelinePlaying &&
+      currentTimelineSnapshot
+    ) {
+      setAiExplanation({
+        humanSummary: `${currentTimelineSnapshot.year} playback frame: ${currentTimelineSnapshot.dominantRiskDriver} is the leading signal while livability is ${currentTimelineSnapshot.livabilityScore}/100 under the ${warmingPathway} pathway.`,
+        commuteImpact:
+          "Commute exposure is being previewed from the yearly climate timeline.",
+        outdoorActivityImpact: `${currentTimelineSnapshot.outdoorComfort} outdoor comfort is projected for this playback year.`,
+        nighttimeRecovery:
+          "Nighttime recovery updates after playback pauses or the year is stepped manually.",
+        vulnerableGroupsNote:
+          "Sensitivity guidance is summarized during playback to keep the timeline responsive.",
+        confidenceNote:
+          "Timeline playback uses cached yearly backend snapshots and the deterministic climate engine.",
+        explanationSource: "timeline",
+      });
+      setLoadingState((current) => ({ ...current, explanation: false }));
+      return;
+    }
+
+    setLoadingState((current) => ({ ...current, explanation: true }));
+
+    getAIExplanation({
+      city: panelCity,
+      year: panelYear,
+      warming: panelWarming,
+      season: panelScoreBreakdown.seasonModifier as Season,
+      timeOfDay: panelScoreBreakdown.timeOfDayModifier,
+      outdoorComfort: panelOutdoorComfort,
+      climateRegionType: panelClimateRegionType,
+      dominantRiskDriver: panelDominantRiskDriver,
+      selectedGridCell: selectedClimateCell,
+      interactionSummary: climateInteraction,
+    })
+      .then((explanation) => {
+        if (!cancelled) {
+          setAiExplanation(explanation);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAiExplanation({
+            ...initialAIExplanation,
+            humanSummary:
+              "Explanation service is temporarily unavailable. Computed scores remain visible.",
+          });
+        }
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingState((current) => ({ ...current, explanation: false }));
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    panelCity,
+    panelClimateRegionType,
+    panelDominantRiskDriver,
+    panelOutdoorComfort,
+    panelScoreBreakdown.seasonModifier,
+    panelScoreBreakdown.timeOfDayModifier,
+    panelWarming,
+    panelYear,
+    climateInteraction,
+    currentTimelineSnapshot,
+    selectedClimateCell,
+    timelinePlaybackEnabled,
+    timelinePlaying,
+    warmingPathway,
+  ]);
+
+  useEffect(() => {
+    let cancelled = false;
+
     if (!currentDemoStep) {
       return;
     }
@@ -620,12 +937,53 @@ export default function MapPage() {
   function updateComparisonMode(enabled: boolean) {
     setComparisonMode(enabled);
 
-    if (!enabled) {
+    if (enabled) {
+      setTimelinePlaybackEnabled(false);
+      setTimelinePlaying(false);
+    } else {
       setActivePanelTab("Overview");
     }
   }
 
+  function toggleTimelinePlaybackMode() {
+    setTimelinePlaybackEnabled((currentValue) => {
+      const nextValue = !currentValue;
+
+      if (nextValue) {
+        setComparisonMode(false);
+        setScenarioMode("manual");
+        setClimateOverlayEnabled(true);
+        setSelectedYear((currentYear) =>
+          Math.min(
+            playbackYearRange.end,
+            Math.max(playbackYearRange.start, currentYear),
+          ),
+        );
+      } else {
+        setTimelinePlaying(false);
+
+        if (!years.some((year) => year === selectedYear)) {
+          setSelectedYear(2050);
+        }
+      }
+
+      return nextValue;
+    });
+  }
+
+  function stepTimeline(delta: number) {
+    setTimelinePlaying(false);
+    setSelectedYear((currentYear) =>
+      Math.min(
+        playbackYearRange.end,
+        Math.max(playbackYearRange.start, currentYear + delta),
+      ),
+    );
+  }
+
   function startDemoTour() {
+    setTimelinePlaying(false);
+    setTimelinePlaybackEnabled(false);
     setDemoIndex(0);
     setDemoPaused(false);
     setDemoActive(true);
@@ -683,10 +1041,247 @@ export default function MapPage() {
     }
   }, []);
 
+  const saveCurrentScenario = useCallback(async () => {
+    setSavingScenario(true);
+    setApiError(null);
+
+    try {
+      const savedScenario = await saveScenario({
+        name: `${panelCity.name} ${panelYear} +${panelWarming.toFixed(1)}C`,
+        city: panelCity,
+        year: panelYear,
+        warming: panelWarming,
+        season: panelScoreBreakdown.seasonModifier as Season,
+        timeOfDay: panelScoreBreakdown.timeOfDayModifier,
+        activeLayer: panelActiveOverlays[0] ?? "None",
+        outdoorComfort: panelOutdoorComfort,
+      });
+
+      setSavedScenarios((current) => [
+        savedScenario,
+        ...current.filter((scenario) => scenario.id !== savedScenario.id),
+      ]);
+      setActivePanelTab("Saved");
+    } catch {
+      setApiError(
+        "Scenario could not be saved. Check that the database is running.",
+      );
+    } finally {
+      setSavingScenario(false);
+    }
+  }, [
+    panelActiveOverlays,
+    panelCity,
+    panelOutdoorComfort,
+    panelScoreBreakdown.seasonModifier,
+    panelScoreBreakdown.timeOfDayModifier,
+    panelWarming,
+    panelYear,
+  ]);
+
+  const loadSavedScenario = useCallback(async (scenario: SavedScenario) => {
+    setLoadingState((current) => ({ ...current, searching: true }));
+    setApiError(null);
+
+    try {
+      const result = await searchLocation({
+        query: scenario.locationName,
+        fallbackCenter: [scenario.longitude, scenario.latitude],
+      });
+      const layerName = layerNames.includes(
+        scenario.activeLayer as (typeof layerNames)[number],
+      )
+        ? (scenario.activeLayer as (typeof layerNames)[number])
+        : null;
+
+      setSelectedCity({
+        ...result.city,
+        livabilityScore: scenario.livabilityScore,
+        heatRisk: scenario.heatRisk,
+        floodRisk: scenario.floodRisk,
+      });
+      setRegionalMapping(result.regionalMapping);
+      setSelectedYear(scenario.year);
+      setManualWarming(scenario.warmingLevel);
+      setScenarioMode("manual");
+      setSelectedSeason(scenario.season);
+      setLayers(layerName ? createLayerPreset([layerName]) : createLayerPreset([]));
+      setClimateOverlayEnabled(layerName !== null);
+      setComparisonMode(false);
+      setTimelinePlaybackEnabled(false);
+      setTimelinePlaying(false);
+      setFocusedCityName(result.city.name);
+      setFocusRequestId((currentId) => currentId + 1);
+      setActivePanelTab("Overview");
+    } catch {
+      setApiError("Saved scenario could not be reloaded.");
+    } finally {
+      setLoadingState((current) => ({ ...current, searching: false }));
+    }
+  }, []);
+
+  const removeSavedScenario = useCallback(async (scenarioId: number) => {
+    setApiError(null);
+
+    try {
+      await deleteSavedScenario(scenarioId);
+      setSavedScenarios((current) =>
+        current.filter((scenario) => scenario.id !== scenarioId),
+      );
+    } catch {
+      setApiError("Saved scenario could not be deleted.");
+    }
+  }, []);
+
+  const runRecommendationAdvisor = useCallback(
+    async (preferences: RecommendationPreferences) => {
+      setRecommendationLoading(true);
+      setApiError(null);
+
+      try {
+        const result = await getRecommendations({
+          city: selectedCity,
+          preferences,
+        });
+
+        setRecommendationResult(result);
+      } catch {
+        setApiError("Recommendation advisor could not load future suitability data.");
+      } finally {
+        setRecommendationLoading(false);
+      }
+    },
+    [selectedCity],
+  );
+
+  const runClimateAdvisor = useCallback(
+    async (queryText: string, selectedPreferences: string[]) => {
+      setAdvisorLoading(true);
+      setApiError(null);
+
+      try {
+        const result = await queryClimateAdvisor({
+          queryText,
+          selectedPreferences,
+          currentScenarioState: {
+            location: selectedCity.name,
+            year: selectedYear,
+            warming: activeWarming,
+            season: selectedSeason,
+          },
+        });
+
+        setAdvisorResult(result);
+      } catch {
+        setApiError("Climate Advisor could not parse or score that query.");
+      } finally {
+        setAdvisorLoading(false);
+      }
+    },
+    [activeWarming, selectedCity.name, selectedSeason, selectedYear],
+  );
+
+  const applyAdvisorToMap = useCallback(async (result: AdvisorResult) => {
+    setLoadingState((current) => ({ ...current, searching: true }));
+    setApiError(null);
+
+    try {
+      const searchResult = await searchLocation({
+        query: result.extractedInputs.primaryLocation,
+        fallbackCenter: [selectedCity.longitude, selectedCity.latitude],
+      });
+
+      setSelectedCity(searchResult.city);
+      setRegionalMapping(searchResult.regionalMapping);
+      setFocusedCityName(searchResult.city.name);
+      setFocusRequestId((currentId) => currentId + 1);
+      setSelectedYear(result.extractedInputs.targetYear);
+      setManualWarming(result.extractedInputs.warmingLevel);
+      setScenarioMode("manual");
+      setSelectedSeason(result.extractedInputs.season);
+      setLayers(createLayerPreset(["Heat Risk"]));
+      setClimateOverlayEnabled(true);
+      setActivePanelTab("Overview");
+    } catch {
+      setApiError("Advisor result could not be applied to the map.");
+    } finally {
+      setLoadingState((current) => ({ ...current, searching: false }));
+    }
+  }, [selectedCity.latitude, selectedCity.longitude]);
+
+  const addAdvisorComparisonLocation = useCallback(
+    async (locationName: string) => {
+      setLoadingState((current) => ({ ...current, searching: true }));
+      setApiError(null);
+
+      try {
+        const result = await searchLocation({
+          query: locationName,
+          fallbackCenter: [selectedCity.longitude, selectedCity.latitude],
+        });
+
+        setSelectedCity(result.city);
+        setRegionalMapping(result.regionalMapping);
+        setSelectedYear(advisorResult?.extractedInputs.targetYear ?? selectedYear);
+        setManualWarming(advisorResult?.extractedInputs.warmingLevel ?? activeWarming);
+        setScenarioMode("manual");
+        setSelectedSeason(advisorResult?.extractedInputs.season ?? selectedSeason);
+        setComparisonMode(true);
+        setActivePanelTab("Comparison");
+        setFocusedCityName(result.city.name);
+        setFocusRequestId((currentId) => currentId + 1);
+      } catch {
+        setApiError("Comparison location could not be loaded.");
+      } finally {
+        setLoadingState((current) => ({ ...current, searching: false }));
+      }
+    },
+    [
+      activeWarming,
+      advisorResult,
+      selectedCity.latitude,
+      selectedCity.longitude,
+      selectedSeason,
+      selectedYear,
+    ],
+  );
+
   const syncComparisonView = useCallback((view: SyncedMapView) => {
     setSyncedView(view);
     setLastMapView(view);
   }, []);
+
+  const inspectClimateCell = useCallback(
+    async (
+      cell: { gridCellId: string; layerType: string },
+      scenario: {
+        year: number;
+        warming: number;
+        season: Season;
+      },
+    ) => {
+      setLoadingState((current) => ({ ...current, explanation: true }));
+      setApiError(null);
+
+      try {
+        const detail = await getClimateCellDetail({
+          gridCellId: cell.gridCellId,
+          layerType: cell.layerType,
+          year: scenario.year,
+          warming: scenario.warming,
+          season: scenario.season,
+        });
+
+        setSelectedClimateCell(detail);
+        setActivePanelTab("Technical");
+      } catch {
+        setApiError("Climate cell detail could not be loaded.");
+      } finally {
+        setLoadingState((current) => ({ ...current, explanation: false }));
+      }
+    },
+    [],
+  );
 
   const searchRegion = useCallback(async (query: string): Promise<SearchResult> => {
     const center = syncedView?.center ?? lastMapView?.center ?? [31, 30];
@@ -783,6 +1378,28 @@ export default function MapPage() {
                     : "Region overlay on / no layers active"
                 : "Climate overlay off"}
             </p>
+          </div>
+
+          <div className="mt-3 rounded-lg border border-white/10 bg-white/[0.045] p-4">
+            <div className="flex items-center justify-between gap-4">
+              <p className="text-xs uppercase tracking-[0.26em] text-white/35">
+                Overlay opacity
+              </p>
+              <p className="text-sm font-medium text-cyan-50">
+                {Math.round(overlayOpacity * 100)}%
+              </p>
+            </div>
+            <input
+              aria-label="Climate overlay opacity"
+              type="range"
+              min={45}
+              max={100}
+              value={Math.round(overlayOpacity * 100)}
+              onChange={(event) =>
+                setOverlayOpacity(Number(event.currentTarget.value) / 100)
+              }
+              className="mt-4 h-2 w-full accent-cyan-200"
+            />
           </div>
         </motion.header>
 
@@ -927,6 +1544,14 @@ export default function MapPage() {
                   climateOverlays={scenarioAClimateOverlays}
                   syncedView={syncedView}
                   onViewChange={syncComparisonView}
+                  onClimateSurfaceMetadata={setClimateSurfaceMetadata}
+                  onClimateCellSelect={(cell) =>
+                    inspectClimateCell(cell, {
+                      year: scenarioA.year,
+                      warming: scenarioA.warming,
+                      season: scenarioA.season,
+                    })
+                  }
                   onSelectCity={selectCity}
                   onInspectArea={inspectArea}
                 />
@@ -958,6 +1583,14 @@ export default function MapPage() {
                   climateOverlays={scenarioBClimateOverlays}
                   syncedView={syncedView}
                   onViewChange={syncComparisonView}
+                  onClimateSurfaceMetadata={setClimateSurfaceMetadata}
+                  onClimateCellSelect={(cell) =>
+                    inspectClimateCell(cell, {
+                      year: scenarioB.year,
+                      warming: scenarioB.warming,
+                      season: scenarioB.season,
+                    })
+                  }
                   onSelectCity={selectCity}
                   onInspectArea={inspectArea}
                 />
@@ -976,6 +1609,14 @@ export default function MapPage() {
               climateOverlayEnabled={climateOverlayEnabled}
               climateOverlays={singleClimateOverlays}
               onViewChange={setLastMapView}
+              onClimateSurfaceMetadata={setClimateSurfaceMetadata}
+              onClimateCellSelect={(cell) =>
+                inspectClimateCell(cell, {
+                  year: selectedYear,
+                  warming: activeWarming,
+                  season: selectedSeason,
+                })
+              }
               onSelectCity={selectCity}
               onInspectArea={inspectArea}
             />
@@ -999,6 +1640,10 @@ export default function MapPage() {
             scoreBreakdown={panelScoreBreakdown}
             dominantRiskDriver={panelDominantRiskDriver}
             rasterSample={panelRasterSample}
+            climateSurfaceMetadata={climateSurfaceMetadata}
+            climateCellDetail={selectedClimateCell}
+            climateInteraction={climateInteraction}
+            aiExplanation={aiExplanation}
             comparisonMode={comparisonMode}
             scientificView={scientificView}
             inspectedScenario={inspectedScenario}
@@ -1011,6 +1656,24 @@ export default function MapPage() {
             activeOverlays={[...panelActiveOverlays]}
             activeTab={activePanelTab}
             onActiveTabChange={setActivePanelTab}
+            onSaveScenario={saveCurrentScenario}
+            savedScenarios={savedScenarios}
+            onLoadSavedScenario={loadSavedScenario}
+            onDeleteSavedScenario={removeSavedScenario}
+            savingScenario={savingScenario}
+            recommendationResult={recommendationResult}
+            recommendationLoading={recommendationLoading}
+            onRunRecommendation={runRecommendationAdvisor}
+            advisorResult={advisorResult}
+            advisorLoading={advisorLoading}
+            onRunAdvisorQuery={runClimateAdvisor}
+            onApplyAdvisorResult={applyAdvisorToMap}
+            onAddAdvisorComparisonLocation={addAdvisorComparisonLocation}
+            timelinePlaybackEnabled={timelinePlaybackEnabled}
+            timelinePlaying={timelinePlaying}
+            warmingPathway={warmingPathway}
+            timelineSnapshot={currentTimelineSnapshot}
+            timelineData={timelineData}
           />
         </div>
 
@@ -1024,38 +1687,156 @@ export default function MapPage() {
             <p className="text-xs uppercase tracking-[0.3em] text-white/40">
               Timeline
             </p>
-            <p className="text-lg font-semibold text-white">{selectedYear}</p>
+            <button
+              type="button"
+              onClick={toggleTimelinePlaybackMode}
+              className={`rounded-full border px-3 py-1.5 text-[11px] font-medium uppercase tracking-[0.16em] transition ${
+                timelinePlaybackEnabled
+                  ? "border-cyan-100/40 bg-cyan-100/15 text-cyan-50"
+                  : "border-white/10 bg-white/[0.04] text-white/45 hover:text-white"
+              }`}
+            >
+              Evolution {timelinePlaybackEnabled ? "On" : "Off"}
+            </button>
           </div>
 
-          <div className="mt-5 grid grid-cols-4 gap-2">
-            {years.map((year) => (
-              <button
-                key={year}
-                type="button"
-                onClick={() => setSelectedYear(year)}
-                className={`rounded-lg border px-3 py-2 text-sm transition ${
-                  selectedYear === year
-                    ? "border-cyan-100/50 bg-cyan-100/15 text-white shadow-[0_0_26px_rgba(103,232,249,0.2)]"
-                    : "border-white/10 bg-white/[0.04] text-white/50 hover:text-white"
-                }`}
-              >
-                {year}
-              </button>
-            ))}
-          </div>
+          {timelinePlaybackEnabled ? (
+            <>
+              <div className="mt-4 flex items-end justify-between gap-4">
+                <div>
+                  <p className="text-3xl font-semibold leading-none text-white">
+                    {selectedYear}
+                  </p>
+                  <p className="mt-1 text-xs text-cyan-100/55">
+                    +{activeWarming.toFixed(1)}C / {warmingPathway}
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => stepTimeline(-1)}
+                    className="rounded-full border border-white/10 bg-white/[0.045] p-2 text-white/55 transition hover:text-white"
+                    aria-label="Step timeline backward"
+                  >
+                    <SkipBack size={15} strokeWidth={1.8} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      setTimelinePlaying((currentValue) => !currentValue)
+                    }
+                    className="rounded-full border border-cyan-100/30 bg-cyan-100/12 p-2.5 text-cyan-50 transition hover:bg-cyan-100/18"
+                    aria-label={timelinePlaying ? "Pause timeline" : "Play timeline"}
+                  >
+                    {timelinePlaying ? (
+                      <Pause size={16} strokeWidth={1.8} />
+                    ) : (
+                      <Play size={16} strokeWidth={1.8} />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => stepTimeline(1)}
+                    className="rounded-full border border-white/10 bg-white/[0.045] p-2 text-white/55 transition hover:text-white"
+                    aria-label="Step timeline forward"
+                  >
+                    <SkipForward size={15} strokeWidth={1.8} />
+                  </button>
+                </div>
+              </div>
 
-          <input
-            aria-label="Projection year"
-            type="range"
-            min={0}
-            max={years.length - 1}
-            step={1}
-            value={years.indexOf(selectedYear)}
-            onChange={(event) =>
-              setSelectedYear(years[Number(event.currentTarget.value)])
-            }
-            className="mt-5 h-2 w-full accent-cyan-200"
-          />
+              <input
+                aria-label="Climate evolution year"
+                type="range"
+                min={playbackYearRange.start}
+                max={playbackYearRange.end}
+                step={1}
+                value={selectedYear}
+                onChange={(event) => {
+                  setTimelinePlaying(false);
+                  setSelectedYear(Number(event.currentTarget.value));
+                }}
+                className="mt-5 h-2 w-full accent-cyan-200"
+              />
+
+              <div className="mt-4 grid grid-cols-3 gap-2">
+                {(["optimistic", "moderate", "severe"] as const).map((pathway) => (
+                  <button
+                    key={pathway}
+                    type="button"
+                    onClick={() => setWarmingPathway(pathway)}
+                    className={`rounded-lg border px-2 py-2 text-[11px] font-medium uppercase tracking-[0.12em] transition ${
+                      warmingPathway === pathway
+                        ? "border-cyan-100/40 bg-cyan-100/15 text-cyan-50"
+                        : "border-white/10 bg-white/[0.035] text-white/42 hover:text-white"
+                    }`}
+                  >
+                    {pathway}
+                  </button>
+                ))}
+              </div>
+
+              <div className="mt-3 flex items-center justify-between gap-3">
+                <p className="text-xs uppercase tracking-[0.2em] text-white/35">
+                  Speed
+                </p>
+                <div className="flex gap-1 rounded-full border border-white/10 bg-white/[0.035] p-1">
+                  {playbackSpeeds.map((speed) => (
+                    <button
+                      key={speed}
+                      type="button"
+                      onClick={() => setPlaybackSpeed(speed)}
+                      className={`rounded-full px-2.5 py-1 text-xs transition ${
+                        playbackSpeed === speed
+                          ? "bg-cyan-100/15 text-cyan-50"
+                          : "text-white/42 hover:text-white"
+                      }`}
+                    >
+                      {speed}x
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {timelineData ? (
+                <p className="mt-3 text-xs leading-5 text-white/45">
+                  {timelineData.climateEvolutionSummary}
+                </p>
+              ) : null}
+            </>
+          ) : (
+            <>
+              <div className="mt-5 grid grid-cols-4 gap-2">
+                {years.map((year) => (
+                  <button
+                    key={year}
+                    type="button"
+                    onClick={() => setSelectedYear(year)}
+                    className={`rounded-lg border px-3 py-2 text-sm transition ${
+                      selectedYear === year
+                        ? "border-cyan-100/50 bg-cyan-100/15 text-white shadow-[0_0_26px_rgba(103,232,249,0.2)]"
+                        : "border-white/10 bg-white/[0.04] text-white/50 hover:text-white"
+                    }`}
+                  >
+                    {year}
+                  </button>
+                ))}
+              </div>
+
+              <input
+                aria-label="Projection year"
+                type="range"
+                min={0}
+                max={years.length - 1}
+                step={1}
+                value={Math.max(0, years.indexOf(selectedYear))}
+                onChange={(event) =>
+                  setSelectedYear(years[Number(event.currentTarget.value)])
+                }
+                className="mt-5 h-2 w-full accent-cyan-200"
+              />
+            </>
+          )}
         </motion.div>
       </section>
     </main>
