@@ -146,6 +146,22 @@ Invoke-RestMethod `
   -Body '{"query":"Whitefield","year":2050,"warming_level":2.7,"season":"Summer","time_of_day":"Afternoon"}'
 ```
 
+Train or inspect the local climate adjustment model:
+
+```powershell
+cd backend
+python scripts/train_climate_model.py --overwrite
+```
+
+```text
+http://127.0.0.1:8000/api/model/status
+```
+
+The current model artifact is a lightweight linear-regression baseline trained
+from deterministic expert-rule labels. It is intentionally structured like a
+real model artifact so future CMIP6/urban outcome training data can replace the
+synthetic labels without changing frontend or scenario API contracts.
+
 See `docs/DATA_SOURCES_AND_STORAGE.md` for the dataset download order and cloud
 storage architecture.
 

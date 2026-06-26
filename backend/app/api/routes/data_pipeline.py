@@ -1,12 +1,17 @@
 from fastapi import APIRouter, HTTPException
+from pathlib import Path
 
 from app.models.schemas import (
     ClimateDatasetRecord,
     ClimateFeatureVector,
+    ClimateModelStatus,
+    ClimateModelTrainingRequest,
+    ClimateModelTrainingResponse,
     FeatureBuildRequest,
 )
 from app.services.dataset_registry import get_dataset, list_datasets
 from app.services.feature_engineering import build_climate_feature_vector
+from app.services.ml_training import get_model_status, train_climate_adjustment_model
 
 
 router = APIRouter(prefix="/api", tags=["data-pipeline"])
@@ -30,3 +35,18 @@ def dataset_detail(dataset_key: str) -> ClimateDatasetRecord:
 @router.post("/features/build", response_model=ClimateFeatureVector)
 def build_features(payload: FeatureBuildRequest) -> ClimateFeatureVector:
     return build_climate_feature_vector(payload)
+
+
+@router.get("/model/status", response_model=ClimateModelStatus)
+def model_status() -> ClimateModelStatus:
+    return get_model_status()
+
+
+@router.post("/model/train", response_model=ClimateModelTrainingResponse)
+def train_model(
+    payload: ClimateModelTrainingRequest,
+) -> ClimateModelTrainingResponse:
+    return train_climate_adjustment_model(
+        output_path=Path(payload.output_path) if payload.output_path else None,
+        overwrite=payload.overwrite,
+    )

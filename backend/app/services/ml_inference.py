@@ -1,4 +1,8 @@
 from app.models.schemas import ClimateFeatureVector, ClimateModelPrediction
+from app.services.ml_training import (
+    TRAINED_MODEL_VERSION,
+    predict_with_trained_model,
+)
 
 
 MODEL_VERSION = "deterministic_linear_baseline_v1"
@@ -7,6 +11,23 @@ MODEL_VERSION = "deterministic_linear_baseline_v1"
 def predict_climate_adjustments(
     features: ClimateFeatureVector,
 ) -> ClimateModelPrediction:
+    trained_prediction = predict_with_trained_model(features)
+
+    if trained_prediction:
+        inputs_used = [name for name in trained_inputs() if name in features.features]
+        return ClimateModelPrediction(
+            heat_adjustment=trained_prediction["heat_adjustment"],
+            flood_adjustment=trained_prediction["flood_adjustment"],
+            comfort_adjustment=trained_prediction["comfort_adjustment"],
+            water_stress_adjustment=trained_prediction["water_stress_adjustment"],
+            livability_adjustment=trained_prediction["livability_adjustment"],
+            model_version=TRAINED_MODEL_VERSION,
+            model_type="trained_linear_regression_artifact",
+            confidence=features.confidence,
+            inputs_used=inputs_used,
+            fallback_used=features.data_completeness < 0.5,
+        )
+
     heat = feature_value(features, "heat_stress_index", 0.5)
     precipitation = feature_value(features, "precipitation_anomaly_pct", 0.0)
     humidity = feature_value(features, "relative_humidity_pct", 55.0) / 100
@@ -102,3 +123,20 @@ def optional_feature_value(
 ) -> float | None:
     feature = features.features.get(name)
     return float(feature.value) if feature else None
+
+
+def trained_inputs() -> tuple[str, ...]:
+    return (
+        "heat_stress_index",
+        "precipitation_anomaly_pct",
+        "relative_humidity_pct",
+        "vegetation_index",
+        "water_stress_index",
+        "urban_density_index",
+        "coastal_exposure_index",
+        "future_time_index",
+        "warming_level_c",
+        "future_monthly_tmax_c",
+        "future_monthly_precipitation_mm",
+        "future_monthly_wind_speed_m_s",
+    )

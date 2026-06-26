@@ -1,5 +1,6 @@
 fastapi
 httpx
+numpy
 overturemaps
 psycopg[binary]
 pydantic

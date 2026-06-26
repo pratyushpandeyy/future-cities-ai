@@ -485,6 +485,28 @@ class ClimateModelPrediction(BaseModel):
     fallback_used: bool
 
 
+class ClimateModelStatus(BaseModel):
+    model_version: str
+    model_type: str
+    artifact_path: str | None = None
+    trained: bool
+    trained_at: str | None = None
+    training_row_count: int | None = None
+    feature_names: list[str] = Field(default_factory=list)
+    target_names: list[str] = Field(default_factory=list)
+    metrics: dict[str, float] = Field(default_factory=dict)
+    notes: list[str] = Field(default_factory=list)
+
+
+class ClimateModelTrainingRequest(BaseModel):
+    output_path: str | None = None
+    overwrite: bool = False
+
+
+class ClimateModelTrainingResponse(ClimateModelStatus):
+    message: str
+
+
 class AdminBoundarySummary(BaseModel):
     id: int
     name: str
