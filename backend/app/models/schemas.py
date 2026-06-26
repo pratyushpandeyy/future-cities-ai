@@ -29,6 +29,8 @@ class ScenarioScoreRequest(BaseModel):
     season: str
     timeOfDay: str
     overlayTypes: list[str] = Field(default_factory=list)
+    climateScenario: str = "ssp245"
+    climateModel: str | None = None
 
 
 class ScoreBreakdown(BaseModel):
@@ -52,6 +54,82 @@ class ClimateRasterSample(BaseModel):
     dataset_name: str
     dataset_resolution: str
     layer_type: str
+    unit: str | None = None
+    variable: str | None = None
+    model: str | None = None
+    scenario: str | None = None
+    period: str | None = None
+    month: int | None = None
+    source_path: str | None = None
+    is_fallback: bool = False
+    provider: str | None = None
+    cache_hit: bool = False
+
+
+class ClimateDataEvidence(BaseModel):
+    data_mode: str
+    source_label: str
+    confidence: str
+    sampled_variable: str | None = None
+    sampled_value: float | None = None
+    sampled_unit: str | None = None
+    model: str | None = None
+    scenario: str | None = None
+    period: str | None = None
+    month: int | None = None
+    grid_cell_id: str | None = None
+    dataset_resolution: str | None = None
+    cache_hit: bool = False
+    warning: str | None = None
+
+
+class ClimateProviderStatus(BaseModel):
+    name: str
+    kind: str
+    enabled: bool
+    description: str
+
+
+class ClimateDataBrokerStatus(BaseModel):
+    provider_order: list[str]
+    cache_directory: str
+    cache_entry_count: int
+    providers: list[ClimateProviderStatus]
+
+
+class EnvironmentalSample(BaseModel):
+    variable: str
+    value: float
+    unit: str
+    provider: str
+    source_url: str
+    resolution: str
+    grid_cell_id: str
+    confidence: str
+    category: str | None = None
+
+
+class EnvironmentalContext(BaseModel):
+    latitude: float
+    longitude: float
+    elevation: EnvironmentalSample | None = None
+    land_cover: EnvironmentalSample | None = None
+    green_cover_proxy: float | None = None
+    built_up_proxy: float | None = None
+    providers_used: list[str] = Field(default_factory=list)
+
+
+class OvertureUrbanContext(BaseModel):
+    latitude: float
+    longitude: float
+    bbox: list[float]
+    building_count: int
+    place_count: int
+    building_density_per_km2: float
+    place_density_per_km2: float
+    provider: str
+    available: bool
+    note: str
 
 
 class ClimateSurfaceCell(BaseModel):
@@ -265,6 +343,12 @@ class ScenarioScoreResponse(BaseModel):
     score_breakdown: ScoreBreakdown
     dominant_risk_driver: str
     raster_sample: ClimateRasterSample | None = None
+    data_evidence: ClimateDataEvidence
+    scoring_source: str = "deterministic_formula"
+    model_version: str | None = None
+    model_confidence: str | None = None
+    feature_schema_version: str | None = None
+    model_inputs_used: list[str] = Field(default_factory=list)
     summary: str
 
 
@@ -275,6 +359,8 @@ class ScenarioInput(BaseModel):
     season: str
     timeOfDay: str
     overlayTypes: list[str] = Field(default_factory=list)
+    climateScenario: str = "ssp245"
+    climateModel: str | None = None
 
 
 class ScenarioCompareRequest(BaseModel):
@@ -299,6 +385,104 @@ class RegionBoundaryResponse(BaseModel):
     db_boundary_id: int | None = None
     polygon: list[list[float]]
     geojson: dict[str, object] | None = None
+
+
+class SpatialResolveRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=500)
+
+
+class SpatialResolutionResponse(BaseModel):
+    input_query: str
+    place_id: int | None = None
+    place_persisted: bool
+    resolved_location: LocationResult
+    resolution_level: str
+    boundary_id: int | None = None
+    boundary_name: str | None = None
+    boundary_source: str
+    boundary_match_reason: str | None = None
+    climate_region_type: str | None = None
+    climate_grid_cell_id: str | None = None
+    climate_sampled_value: float | None = None
+    climate_sample_source: str | None = None
+    dataset_name: str | None = None
+    dataset_resolution: str | None = None
+    confidence: str
+    fallback_used: bool
+    resolution_notes: list[str] = Field(default_factory=list)
+
+
+class ClimateDatasetRecord(BaseModel):
+    id: int | None = None
+    dataset_key: str
+    name: str
+    category: str
+    provider: str
+    source_url: str | None = None
+    storage_uri: str | None = None
+    data_format: str
+    spatial_resolution: str | None = None
+    temporal_resolution: str | None = None
+    start_year: int | None = None
+    end_year: int | None = None
+    variables: list[str] = Field(default_factory=list)
+    scenarios: list[str] = Field(default_factory=list)
+    geographic_coverage: str
+    status: str
+    license_name: str | None = None
+    attribution: str | None = None
+
+
+class FeatureBuildRequest(BaseModel):
+    query: str = Field(min_length=1, max_length=500)
+    year: int = Field(ge=2025, le=2100)
+    warming_level: float = Field(ge=1.0, le=4.0)
+    season: str = "Summer"
+    time_of_day: str = "Afternoon"
+    climate_scenario: str = "ssp245"
+    climate_model: str | None = None
+
+
+class EngineeredFeature(BaseModel):
+    value: float
+    unit: str
+    source: str
+    dataset_key: str | None = None
+    is_fallback: bool
+    confidence: str
+
+
+class ClimateFeatureVector(BaseModel):
+    input_query: str
+    place_id: int | None = None
+    resolved_name: str
+    latitude: float
+    longitude: float
+    resolution_level: str
+    year: int
+    warming_level: float
+    season: str
+    time_of_day: str
+    climate_region_type: str
+    features: dict[str, EngineeredFeature]
+    available_dataset_keys: list[str]
+    fallback_feature_names: list[str]
+    data_completeness: float
+    confidence: str
+    feature_schema_version: str
+
+
+class ClimateModelPrediction(BaseModel):
+    heat_adjustment: float
+    flood_adjustment: float
+    comfort_adjustment: float
+    water_stress_adjustment: float
+    livability_adjustment: float
+    model_version: str
+    model_type: str
+    confidence: str
+    inputs_used: list[str] = Field(default_factory=list)
+    fallback_used: bool
 
 
 class AdminBoundarySummary(BaseModel):

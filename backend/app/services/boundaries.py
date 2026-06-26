@@ -40,8 +40,11 @@ BOUNDARY_ALIASES = {
 }
 
 
-def get_region_boundary(location: str) -> RegionBoundaryResponse:
-    location_result = resolve_location(location)
+def get_region_boundary(
+    location: str,
+    location_result: LocationResult | None = None,
+) -> RegionBoundaryResponse:
+    location_result = location_result or resolve_location(location)
     database_boundary, database_match_reason = find_database_boundary(
         location,
         location_result,

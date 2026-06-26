@@ -24,6 +24,107 @@ class AdministrativeBoundary(Base):
     )
 
 
+class Place(Base):
+    __tablename__ = "places"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    provider_key: Mapped[str] = mapped_column(
+        String(512),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    normalized_name: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        index=True,
+    )
+    place_type: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        default="location",
+        index=True,
+    )
+    latitude: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    longitude: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    locality: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    district: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    city: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    region: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
+    country: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    hierarchy_label: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    bbox: Mapped[list[float] | None] = mapped_column(JSON, nullable=True)
+    geocoder_provider: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        default="unknown",
+        index=True,
+    )
+    provider_metadata: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    point_geojson: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+
+class ClimateDataset(Base):
+    __tablename__ = "climate_datasets"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    dataset_key: Mapped[str] = mapped_column(
+        String(255),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    name: Mapped[str] = mapped_column(String(500), nullable=False)
+    category: Mapped[str] = mapped_column(String(120), nullable=False, index=True)
+    provider: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    source_url: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    storage_uri: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    data_format: Mapped[str] = mapped_column(String(80), nullable=False)
+    spatial_resolution: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    temporal_resolution: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    start_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    end_year: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    variables: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    scenarios: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    geographic_coverage: Mapped[str] = mapped_column(
+        String(255),
+        nullable=False,
+        default="global",
+    )
+    status: Mapped[str] = mapped_column(
+        String(80),
+        nullable=False,
+        default="planned",
+        index=True,
+    )
+    license_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    attribution: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+
 class SavedScenario(Base):
     __tablename__ = "saved_scenarios"
 

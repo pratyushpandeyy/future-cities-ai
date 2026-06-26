@@ -10,6 +10,7 @@ sys.path.append(str(BACKEND_ROOT))
 
 from app.db.models import AdministrativeBoundary  # noqa: E402
 from app.db.session import Base, SessionLocal, engine, is_database_configured  # noqa: E402
+from app.services.dataset_registry import sync_builtin_datasets  # noqa: E402
 
 
 BOUNDARY_DIR = BACKEND_ROOT / "data" / "boundaries"
@@ -105,6 +106,7 @@ def main() -> None:
         session.commit()
 
     print(f"Seeded {len(BOUNDARY_SEEDS)} administrative boundaries.")
+    print(f"Synced {sync_builtin_datasets()} climate dataset records.")
 
 
 if __name__ == "__main__":
