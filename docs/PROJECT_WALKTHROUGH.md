@@ -1,5 +1,7 @@
 # Future Cities AI Project Walkthrough
 
+> Note: this file was created earlier in the project. For the most current restart context, read `docs/PROJECT_STATE_CURRENT.md` first, then `docs/REAL_PLATFORM_ROADMAP.md`.
+
 This document explains the current full-stack architecture in simple terms. The project is now a monorepo with a Next.js frontend and a FastAPI backend.
 
 ## 1. Architecture Overview

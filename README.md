@@ -37,6 +37,10 @@ Available mock endpoints:
 
 - `GET /health`
 - `GET /api/search?query=istanbul`
+- `POST /api/spatial/resolve`
+- `GET /api/datasets`
+- `GET /api/datasets/{dataset_key}`
+- `POST /api/features/build`
 - `POST /api/scenario/score`
 - `POST /api/scenario/compare`
 - `GET /api/region-boundary?location=istanbul`
@@ -117,6 +121,235 @@ Inspect database-backed boundaries:
 http://127.0.0.1:8000/api/admin/boundaries
 http://127.0.0.1:8000/api/admin/boundaries/1
 ```
+
+Resolve a place into one combined spatial context:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:8000/api/spatial/resolve `
+  -ContentType "application/json" `
+  -Body '{"query":"Whitefield"}'
+```
+
+The response includes the geocoded place, persistence status, resolution level,
+boundary source, nearest climate grid cell, data source, confidence, and fallback
+status.
+
+Build a model-ready feature vector:
+
+```powershell
+Invoke-RestMethod `
+  -Method Post `
+  -Uri http://127.0.0.1:8000/api/features/build `
+  -ContentType "application/json" `
+  -Body '{"query":"Whitefield","year":2050,"warming_level":2.7,"season":"Summer","time_of_day":"Afternoon"}'
+```
+
+See `docs/DATA_SOURCES_AND_STORAGE.md` for the dataset download order and cloud
+storage architecture.
+
+## WorldClim CMIP6 Downloader
+
+Preview the default 72-file MVP matrix without downloading:
+
+```powershell
+cd backend
+python scripts/download_worldclim_cmip6.py --dry-run
+```
+
+Download one test GeoTIFF:
+
+```powershell
+python scripts/download_worldclim_cmip6.py `
+  --models MPI-ESM1-2-HR `
+  --scenarios ssp245 `
+  --periods 2041-2060 `
+  --variables tmax
+```
+
+Download the default matrix of three GCMs, SSP245/SSP585, four future periods,
+and tmin/tmax/prec:
+
+```powershell
+python scripts/download_worldclim_cmip6.py --confirm
+```
+
+The downloader skips completed files, resumes `.part` files when the server
+supports range requests, retries failures, and writes:
+
+```text
+backend/data/raw/worldclim/cmip6/download_manifest.json
+```
+
+The raw download directory is ignored by Git.
+
+## Foundation Dataset Downloaders
+
+All commands below are resumable. Completed files are skipped and active files
+use a `.part` suffix.
+
+### WorldClim Historical Baseline And Elevation
+
+Preview:
+
+```powershell
+cd backend
+python scripts/download_worldclim_baseline.py --dry-run
+```
+
+Download and extract historical `tmin`, `tmax`, precipitation, and elevation:
+
+```powershell
+python scripts/download_worldclim_baseline.py --confirm --extract
+```
+
+These files support future-minus-historical anomaly calculation and elevation
+features.
+
+### ESA WorldCover For MVP Cities
+
+Preview the required 3-degree tiles:
+
+```powershell
+python scripts/download_worldcover_bbox.py `
+  --cities bengaluru mumbai pune manchester istanbul madrid varanasi `
+  --dry-run
+```
+
+Download only those tiles:
+
+```powershell
+python scripts/download_worldcover_bbox.py `
+  --cities bengaluru mumbai pune manchester istanbul madrid varanasi `
+  --confirm
+```
+
+Use `--bbox WEST SOUTH EAST NORTH` instead of `--cities` for another area.
+The script never downloads the entire global WorldCover archive by default.
+
+### GHSL Population And Built Surface
+
+Preview:
+
+```powershell
+python scripts/download_ghsl.py --dry-run
+```
+
+Download the 2020 global 100m population and built-surface products:
+
+```powershell
+python scripts/download_ghsl.py --confirm-large-download
+```
+
+The two GHSL archives total approximately 6.65 GB. Download only one with:
+
+```powershell
+python scripts/download_ghsl.py `
+  --products built_surface `
+  --confirm-large-download
+```
+
+Sample a completed WorldClim GeoTIFF through FastAPI:
+
+```text
+GET http://127.0.0.1:8000/api/climate/raster-sample?lat=41.0082&lon=28.9784&layer_type=tmax&year=2050&scenario=ssp245&month=7&source=worldclim
+```
+
+The response includes the sampled value, model, scenario, 20-year period,
+month, units, raster cell identifier, and source file. Incomplete `.tif.part`
+files are not sampled.
+
+## Remote Climate Data Broker
+
+The backend now checks climate providers in this default order:
+
+```text
+local WorldClim GeoTIFF
+-> public NASA NEX-GDDP-CMIP6 monthly COG
+-> demo fallback where allowed
+```
+
+Configure the provider order in `backend/.env`:
+
+```text
+CLIMATE_DATA_PROVIDER_ORDER=local_worldclim,nasa_nex_cog
+```
+
+Inspect active providers and cache state:
+
+```text
+GET http://127.0.0.1:8000/api/climate/providers
+```
+
+Force a remote NASA sample:
+
+```text
+GET http://127.0.0.1:8000/api/climate/raster-sample?lat=41.0082&lon=28.9784&layer_type=tmax&year=2050&scenario=ssp245&month=7&source=nasa
+```
+
+The first request reads a remote Cloud Optimized GeoTIFF. Repeated requests use
+the ignored local cache under `backend/data/cache/climate_samples/`.
+
+Extended NASA variables are supported:
+
+```text
+temperature
+tmax
+tmin
+precipitation
+relative humidity
+specific humidity
+wind speed
+solar radiation
+longwave radiation
+```
+
+Enable the slower extended feature set explicitly:
+
+```env
+EXTENDED_CLIMATE_FEATURES_ENABLED=true
+```
+
+## Remote Environmental Context
+
+Sample Copernicus DEM elevation and ESA WorldCover land cover:
+
+```text
+GET http://127.0.0.1:8000/api/environment/context?lat=41.0082&lon=28.9784
+```
+
+These remote sources are opt-in for automatic scenario feature generation:
+
+```env
+REMOTE_ENVIRONMENTAL_FEATURES_ENABLED=true
+```
+
+Query Overture buildings and POIs around a point:
+
+```env
+OVERTURE_ENABLED=true
+```
+
+```text
+GET http://127.0.0.1:8000/api/environment/urban-context?lat=12.9716&lon=77.5946&radius_degrees=0.005
+```
+
+Overture is an external experimental client. Upstream errors are returned as
+`available=false` rather than crashing scenario scoring.
+
+Download a bbox subset from Overture cloud GeoParquet:
+
+```powershell
+python scripts/download_overture_bbox.py `
+  --bbox 77.2 12.7 77.9 13.2 `
+  --types building place `
+  --confirm
+```
+
+After adding database models, rerun `python scripts/seed_boundaries.py`; its
+`Base.metadata.create_all()` call creates missing tables in the configured
+database.
 
 Useful verification flow:
 
