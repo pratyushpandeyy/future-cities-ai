@@ -19,6 +19,10 @@ __pycache__
 .venv
 *.py[cod]
 
+# Large local geospatial and climate downloads
+backend/data/raw/
+backend/data/cache/
+
 # Testing and coverage
 coverage
 

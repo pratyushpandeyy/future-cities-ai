@@ -1,6 +1,9 @@
 fastapi
+httpx
+overturemaps
 psycopg[binary]
 pydantic
 python-dotenv
+rasterio
 sqlalchemy
 uvicorn[standard]
