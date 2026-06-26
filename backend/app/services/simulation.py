@@ -6,6 +6,7 @@ from app.models.schemas import (
     ScenarioInput,
     ScenarioScoreRequest,
     ScenarioScoreResponse,
+    FeatureBuildRequest,
 )
 from app.services.climate_engine import compute_scenario_score
 from app.services.geocoding import geocode_location
@@ -215,8 +216,49 @@ def get_location_baseline(location: str) -> dict[str, float | int | str]:
 
 
 def score_scenario(payload: ScenarioScoreRequest | ScenarioInput) -> ScenarioScoreResponse:
-    location = resolve_location(payload.location)
-    return compute_scenario_score(payload, location)
+    from app.services.climate_data.climate_data_broker import (
+        sample_climate_data,
+    )
+    from app.services.feature_engineering import (
+        build_climate_feature_vector,
+        representative_month,
+    )
+    from app.services.ml_inference import predict_climate_adjustments
+    from app.services.spatial_resolution import resolve_spatial_context
+
+    spatial = resolve_spatial_context(payload.location)
+    location = spatial.resolved_location
+    feature_vector = build_climate_feature_vector(
+        FeatureBuildRequest(
+            query=payload.location,
+            year=payload.year,
+            warming_level=payload.warmingLevel,
+            season=payload.season,
+            time_of_day=payload.timeOfDay,
+            climate_scenario=payload.climateScenario,
+            climate_model=payload.climateModel,
+        ),
+        spatial=spatial,
+    )
+    model_prediction = predict_climate_adjustments(feature_vector)
+    raster_sample = sample_climate_data(
+        latitude=location.latitude,
+        longitude=location.longitude,
+        variable="tmax",
+        year=payload.year,
+        scenario=payload.climateScenario,
+        month=representative_month(payload.season, location.latitude),
+        model=payload.climateModel,
+        allow_demo_fallback=True,
+    )
+
+    return compute_scenario_score(
+        payload,
+        location,
+        feature_vector=feature_vector,
+        model_prediction=model_prediction,
+        raster_sample=raster_sample,
+    )
 
 
 def compare_scenarios(payload: ScenarioCompareRequest) -> ScenarioCompareResponse:

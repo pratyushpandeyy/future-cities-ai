@@ -1,11 +1,14 @@
 from app.models.schemas import (
+    ClimateDataEvidence,
+    ClimateFeatureVector,
+    ClimateModelPrediction,
+    ClimateRasterSample,
     LocationResult,
     ScenarioInput,
     ScenarioScoreRequest,
     ScenarioScoreResponse,
     ScoreBreakdown,
 )
-from app.services.climate_data.climate_raster_service import sample_climate_raster
 
 
 CLIMATE_REGION_PRESETS = {
@@ -87,6 +90,10 @@ CLIMATE_REGION_PRESETS = {
 def compute_scenario_score(
     payload: ScenarioScoreRequest | ScenarioInput,
     location: LocationResult,
+    *,
+    feature_vector: ClimateFeatureVector | None = None,
+    model_prediction: ClimateModelPrediction | None = None,
+    raster_sample: ClimateRasterSample | None = None,
 ) -> ScenarioScoreResponse:
     climate_region_type = classify_climate_region(location)
     preset = CLIMATE_REGION_PRESETS[climate_region_type]
@@ -97,13 +104,20 @@ def compute_scenario_score(
     overlay_types = [overlay.lower() for overlay in payload.overlayTypes]
     coastal = is_coastal(location)
     dense_urban = is_dense_urban(location)
-    raster_sample = sample_climate_raster(
-        latitude=location.latitude,
-        longitude=location.longitude,
-        layer_type="heat_stress",
+    model_heat_adjustment = (
+        model_prediction.heat_adjustment if model_prediction else 0
     )
-    raster_heat_adjustment = (
-        (raster_sample.sampled_value - 0.5) * 18 if raster_sample else 0
+    model_flood_adjustment = (
+        model_prediction.flood_adjustment if model_prediction else 0
+    )
+    model_comfort_adjustment = (
+        model_prediction.comfort_adjustment if model_prediction else 0
+    )
+    model_water_adjustment = (
+        model_prediction.water_stress_adjustment if model_prediction else 0
+    )
+    model_livability_adjustment = (
+        model_prediction.livability_adjustment if model_prediction else 0
     )
 
     heat_season = {"summer": 14, "winter": -9, "monsoon": 1, "spring": 4}.get(
@@ -133,7 +147,7 @@ def compute_scenario_score(
         + time_heat * preset["night_heat_retention"]
         + (7 if dense_urban else 0)
         + (4 if "heat risk" in overlay_types else 0)
-        + raster_heat_adjustment
+        + model_heat_adjustment
     )
     flood_score = (
         preset["base_flood"]
@@ -142,6 +156,7 @@ def compute_scenario_score(
         + flood_season
         + (10 if coastal else 0)
         + (5 if "flood risk" in overlay_types else 0)
+        + model_flood_adjustment
     )
     air_quality_score = (
         preset["base_air"]
@@ -160,6 +175,7 @@ def compute_scenario_score(
         + warming_pressure * 10
         + (8 if season == "summer" else -4 if season == "monsoon" else 0)
         + (4 if "water stress" in overlay_types else 0)
+        + model_water_adjustment
     )
     outdoor_comfort_score = (
         92
@@ -167,6 +183,7 @@ def compute_scenario_score(
         - flood_score * 0.16
         - air_quality_score * 0.12
         + comfort_season
+        + model_comfort_adjustment
     )
     livability_stress_score = (
         heat_score * 0.34
@@ -175,7 +192,11 @@ def compute_scenario_score(
         + green_cover_stress_score * 0.14
         + water_stress_score * 0.19
     )
-    livability_score = preset["base_livability"] - livability_stress_score * 0.34
+    livability_score = (
+        preset["base_livability"]
+        - livability_stress_score * 0.34
+        + model_livability_adjustment
+    )
 
     breakdown = ScoreBreakdown(
         heat_score=round_score(heat_score),
@@ -216,6 +237,24 @@ def compute_scenario_score(
         score_breakdown=breakdown,
         dominant_risk_driver=dominant_driver,
         raster_sample=raster_sample,
+        data_evidence=build_data_evidence(raster_sample),
+        scoring_source=(
+            "feature_model_with_formula_fallback"
+            if model_prediction
+            else "deterministic_formula"
+        ),
+        model_version=(
+            model_prediction.model_version if model_prediction else None
+        ),
+        model_confidence=(
+            model_prediction.confidence if model_prediction else None
+        ),
+        feature_schema_version=(
+            feature_vector.feature_schema_version if feature_vector else None
+        ),
+        model_inputs_used=(
+            model_prediction.inputs_used if model_prediction else []
+        ),
         summary=build_summary(
             location=location,
             climate_region_type=climate_region_type,
@@ -227,6 +266,67 @@ def compute_scenario_score(
             coastal=coastal,
             time_of_day=payload.timeOfDay,
         ),
+    )
+
+
+def build_data_evidence(
+    raster_sample: ClimateRasterSample | None,
+) -> ClimateDataEvidence:
+    if raster_sample is None:
+        return ClimateDataEvidence(
+            data_mode="formula_fallback",
+            source_label="Formula-only fallback",
+            confidence="Low",
+            warning=(
+                "No raster sample was available for this scenario; scores were "
+                "estimated from regional rules and the deterministic model."
+            ),
+        )
+
+    provider = raster_sample.provider or raster_sample.raster_source
+    is_demo = raster_sample.is_fallback or "demo" in provider.lower()
+    is_worldclim = "worldclim" in provider.lower()
+    is_nasa = "nasa" in provider.lower() or "nex" in provider.lower()
+
+    if is_demo:
+        data_mode = "demo_grid_fallback"
+        source_label = "Demo climate grid fallback"
+        confidence = "Low"
+        warning = (
+            "This scenario used the prototype demo grid because a real climate "
+            "raster sample was not available."
+        )
+    elif is_worldclim:
+        data_mode = "local_worldclim_raster"
+        source_label = "Local WorldClim CMIP6 raster"
+        confidence = "High"
+        warning = None
+    elif is_nasa:
+        data_mode = "remote_nasa_nex_raster"
+        source_label = "Remote NASA NEX-GDDP-CMIP6 raster"
+        confidence = "Medium-high"
+        warning = None
+    else:
+        data_mode = "raster_sample"
+        source_label = raster_sample.dataset_name
+        confidence = "Medium"
+        warning = None
+
+    return ClimateDataEvidence(
+        data_mode=data_mode,
+        source_label=source_label,
+        confidence=confidence,
+        sampled_variable=raster_sample.variable or raster_sample.layer_type,
+        sampled_value=raster_sample.sampled_value,
+        sampled_unit=raster_sample.unit,
+        model=raster_sample.model,
+        scenario=raster_sample.scenario,
+        period=raster_sample.period,
+        month=raster_sample.month,
+        grid_cell_id=raster_sample.grid_cell_id,
+        dataset_resolution=raster_sample.dataset_resolution,
+        cache_hit=raster_sample.cache_hit,
+        warning=warning,
     )
 
 
