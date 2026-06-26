@@ -26,6 +26,7 @@ import type { ScenarioMode } from "@/components/SearchScenarioBar";
 import type {
   AIExplanation,
   AdvisorResult,
+  ClimateDataEvidence,
   ClimateCellDetail,
   ClimateInteractionResult,
   ClimateSurfaceMetadata,
@@ -70,6 +71,7 @@ interface IntelligencePanelProps {
   scoreBreakdown: ScoreBreakdown;
   dominantRiskDriver: string;
   rasterSample: RasterSample | null;
+  dataEvidence: ClimateDataEvidence | null;
   climateSurfaceMetadata: ClimateSurfaceMetadata | null;
   climateCellDetail: ClimateCellDetail | null;
   climateInteraction: ClimateInteractionResult | null;
@@ -311,6 +313,7 @@ export default function IntelligencePanel({
   scoreBreakdown,
   dominantRiskDriver,
   rasterSample,
+  dataEvidence,
   climateSurfaceMetadata,
   climateCellDetail,
   climateInteraction,
@@ -1349,10 +1352,77 @@ export default function IntelligencePanel({
                   Simulation Status
                 </p>
                 <p className="mt-3 text-sm leading-6 text-white/55">
-                  Scores, regional boundaries, and climate surfaces are currently
-                  simulated. Future versions can swap these fixtures for backend
-                  GeoJSON, raster overlays, and grid-cell climate datasets.
+                  Scores blend backend climate samples, feature engineering, and
+                  deterministic model rules. If a source is missing, the backend
+                  falls back without breaking the interface.
                 </p>
+              </section>
+              <section className="rounded-lg border border-emerald-200/20 bg-emerald-200/[0.045] p-4 shadow-[0_0_34px_rgba(16,185,129,0.1)]">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-xs font-medium uppercase tracking-[0.24em] text-emerald-100/65">
+                      Data Evidence
+                    </p>
+                    <p className="mt-2 text-sm leading-6 text-white/55">
+                      {dataEvidence
+                        ? dataEvidence.sourceLabel
+                        : "No backend evidence payload loaded yet."}
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-white/10 bg-black/25 px-2.5 py-1 text-xs text-white/55">
+                    {dataEvidence?.confidence ?? "Unknown"}
+                  </span>
+                </div>
+                <div className="mt-4 grid gap-3">
+                  <DataRow
+                    label="Data mode"
+                    value={dataEvidence?.dataMode ?? "Not loaded"}
+                  />
+                  <DataRow
+                    label="Variable"
+                    value={dataEvidence?.sampledVariable ?? "No sample"}
+                  />
+                  <DataRow
+                    label="Sample"
+                    value={
+                      dataEvidence?.sampledValue !== null &&
+                      dataEvidence?.sampledValue !== undefined
+                        ? `${dataEvidence.sampledValue.toFixed(3)} ${
+                            dataEvidence.sampledUnit ?? ""
+                          }`
+                        : "No sample"
+                    }
+                  />
+                  <DataRow
+                    label="Model / scenario"
+                    value={
+                      dataEvidence?.model || dataEvidence?.scenario
+                        ? `${dataEvidence.model ?? "model n/a"} / ${
+                            dataEvidence.scenario ?? "scenario n/a"
+                          }`
+                        : "No model metadata"
+                    }
+                  />
+                  <DataRow
+                    label="Period / month"
+                    value={
+                      dataEvidence?.period || dataEvidence?.month
+                        ? `${dataEvidence.period ?? "period n/a"} / m${
+                            dataEvidence.month ?? "n/a"
+                          }`
+                        : "No temporal metadata"
+                    }
+                  />
+                  <DataRow
+                    label="Cache"
+                    value={dataEvidence?.cacheHit ? "cache hit" : "fresh/no cache"}
+                  />
+                </div>
+                {dataEvidence?.warning ? (
+                  <p className="mt-4 rounded-lg border border-amber-200/15 bg-amber-200/[0.055] px-3 py-2 text-sm leading-6 text-amber-50/70">
+                    {dataEvidence.warning}
+                  </p>
+                ) : null}
               </section>
               <div className="grid gap-3">
                 <DataRow

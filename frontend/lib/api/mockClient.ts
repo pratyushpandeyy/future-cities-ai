@@ -31,6 +31,23 @@ export interface RasterSample {
   layerType: string;
 }
 
+export interface ClimateDataEvidence {
+  dataMode: string;
+  sourceLabel: string;
+  confidence: string;
+  sampledVariable: string | null;
+  sampledValue: number | null;
+  sampledUnit: string | null;
+  model: string | null;
+  scenario: string | null;
+  period: string | null;
+  month: number | null;
+  gridCellId: string | null;
+  datasetResolution: string | null;
+  cacheHit: boolean;
+  warning: string | null;
+}
+
 export interface ClimateSurfaceMetadata {
   activeRasterLayer: string;
   renderedGridResolution: string;
@@ -301,6 +318,7 @@ export interface ScenarioScoreResult {
   scoreBreakdown: ScoreBreakdown;
   dominantRiskDriver: string;
   rasterSample: RasterSample | null;
+  dataEvidence: ClimateDataEvidence | null;
   summary: string;
 }
 
@@ -397,6 +415,22 @@ interface ApiScenarioScoreResult {
     dataset_name: string;
     dataset_resolution: string;
     layer_type: string;
+  } | null;
+  data_evidence?: {
+    data_mode: string;
+    source_label: string;
+    confidence: string;
+    sampled_variable?: string | null;
+    sampled_value?: number | null;
+    sampled_unit?: string | null;
+    model?: string | null;
+    scenario?: string | null;
+    period?: string | null;
+    month?: number | null;
+    grid_cell_id?: string | null;
+    dataset_resolution?: string | null;
+    cache_hit: boolean;
+    warning?: string | null;
   } | null;
   summary: string;
 }
@@ -687,6 +721,24 @@ function apiScenarioToScore(
           datasetName: payload.raster_sample.dataset_name,
           datasetResolution: payload.raster_sample.dataset_resolution,
           layerType: payload.raster_sample.layer_type,
+        }
+      : null,
+    dataEvidence: payload.data_evidence
+      ? {
+          dataMode: payload.data_evidence.data_mode,
+          sourceLabel: payload.data_evidence.source_label,
+          confidence: payload.data_evidence.confidence,
+          sampledVariable: payload.data_evidence.sampled_variable ?? null,
+          sampledValue: payload.data_evidence.sampled_value ?? null,
+          sampledUnit: payload.data_evidence.sampled_unit ?? null,
+          model: payload.data_evidence.model ?? null,
+          scenario: payload.data_evidence.scenario ?? null,
+          period: payload.data_evidence.period ?? null,
+          month: payload.data_evidence.month ?? null,
+          gridCellId: payload.data_evidence.grid_cell_id ?? null,
+          datasetResolution: payload.data_evidence.dataset_resolution ?? null,
+          cacheHit: payload.data_evidence.cache_hit,
+          warning: payload.data_evidence.warning ?? null,
         }
       : null,
     summary: payload.summary,

@@ -33,6 +33,7 @@ import {
   type AIExplanation,
   type AdvisorResult,
   type ClimateSurfaceMetadata,
+  type ClimateDataEvidence,
   type ClimateCellDetail,
   type ClimateInteractionResult,
   type ClimateTimelineResult,
@@ -120,6 +121,7 @@ function createInitialScenarioScore(city: MapCityNodeData): ScenarioScoreResult 
     },
     dominantRiskDriver: "warming pressure",
     rasterSample: null,
+    dataEvidence: null,
     summary: city.futureSummary,
   };
 }
@@ -351,6 +353,9 @@ export default function MapPage() {
   const panelRasterSample = comparisonMode
     ? inspectedScenarioScore.rasterSample
     : scenarioScore.rasterSample;
+  const panelDataEvidence: ClimateDataEvidence | null = comparisonMode
+    ? inspectedScenarioScore.dataEvidence
+    : scenarioScore.dataEvidence;
   const panelActiveOverlays = comparisonMode
     ? layerNames.filter((layerName) => inspectedScenarioConfig.overlays[layerName])
     : activeLayers;
@@ -1640,6 +1645,7 @@ export default function MapPage() {
             scoreBreakdown={panelScoreBreakdown}
             dominantRiskDriver={panelDominantRiskDriver}
             rasterSample={panelRasterSample}
+            dataEvidence={panelDataEvidence}
             climateSurfaceMetadata={climateSurfaceMetadata}
             climateCellDetail={selectedClimateCell}
             climateInteraction={climateInteraction}

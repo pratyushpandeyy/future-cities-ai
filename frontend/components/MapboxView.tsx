@@ -73,6 +73,14 @@ export interface SyncedMapView {
   sourceId: string;
 }
 
+function hasMapLayer(map: mapboxgl.Map, layerId: string) {
+  try {
+    return Boolean(map.getStyle()?.layers?.some((layer) => layer.id === layerId));
+  } catch {
+    return false;
+  }
+}
+
 function getClimateSurfaceColor(
   kind: ClimateOverlayRenderModel["kind"],
   colorProperty: ClimateOverlayRenderModel["colorProperty"],
@@ -198,7 +206,7 @@ function ensureRegionClimateLayers(
     });
   }
 
-  if (!map.getLayer(REGION_CLIMATE_LAYER_ID)) {
+  if (!hasMapLayer(map, REGION_CLIMATE_LAYER_ID)) {
     const firstSymbolLayerId = map
       .getStyle()
       .layers?.find((layer) => layer.type === "symbol")?.id;
@@ -233,7 +241,7 @@ function ensureRegionClimateLayers(
     );
   }
 
-  if (!map.getLayer(REGION_BOUNDARY_LAYER_ID)) {
+  if (!hasMapLayer(map, REGION_BOUNDARY_LAYER_ID)) {
     map.addLayer({
       id: REGION_BOUNDARY_LAYER_ID,
       type: "line",
@@ -259,8 +267,12 @@ function ensureRegionClimateLayers(
 
 function removeLegacyClimateLayers(map: mapboxgl.Map) {
   LEGACY_CLIMATE_LAYER_IDS.forEach((layerId) => {
-    if (map.getLayer(layerId)) {
-      map.removeLayer(layerId);
+    if (hasMapLayer(map, layerId)) {
+      try {
+        map.removeLayer(layerId);
+      } catch {
+        // Mapbox can dispose style internals during comparison-map remounts.
+      }
     }
   });
 
@@ -346,12 +358,12 @@ function applyClimateSurface(
   if (!regionalMapping || !regionBoundary) {
     removeLegacyClimateLayers(map);
 
-    if (map.getLayer(REGION_CLIMATE_LAYER_ID)) {
+    if (hasMapLayer(map, REGION_CLIMATE_LAYER_ID)) {
       map.setLayoutProperty(REGION_CLIMATE_LAYER_ID, "visibility", "none");
       map.setPaintProperty(REGION_CLIMATE_LAYER_ID, "fill-opacity", 0);
     }
 
-    if (map.getLayer(REGION_BOUNDARY_LAYER_ID)) {
+    if (hasMapLayer(map, REGION_BOUNDARY_LAYER_ID)) {
       map.setLayoutProperty(REGION_BOUNDARY_LAYER_ID, "visibility", "none");
       map.setPaintProperty(REGION_BOUNDARY_LAYER_ID, "line-opacity", 0);
     }
@@ -625,7 +637,7 @@ export default function MapboxView({
     };
 
     const registerHandlers = () => {
-      if (!map.getLayer(REGION_CLIMATE_LAYER_ID)) {
+      if (!hasMapLayer(map, REGION_CLIMATE_LAYER_ID)) {
         return;
       }
 
@@ -641,7 +653,7 @@ export default function MapboxView({
     }
 
     return () => {
-      if (map.getLayer(REGION_CLIMATE_LAYER_ID)) {
+      if (hasMapLayer(map, REGION_CLIMATE_LAYER_ID)) {
         map.off("click", REGION_CLIMATE_LAYER_ID, handleClimateCellClick);
         map.off("mouseenter", REGION_CLIMATE_LAYER_ID, showClimatePointer);
         map.off("mouseleave", REGION_CLIMATE_LAYER_ID, hideClimatePointer);
