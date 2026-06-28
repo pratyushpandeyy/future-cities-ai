@@ -26,6 +26,8 @@ class ClimateModelTrainingTests(unittest.TestCase):
             self.assertEqual(status.model_version, "trained_linear_adjustment_v2")
             self.assertGreater(status.training_row_count or 0, 0)
             self.assertIn("heat_adjustment_mae", status.metrics)
+            self.assertIn("heat_adjustment_validation_mae", status.metrics)
+            self.assertIn("heat_adjustment_validation_r2", status.metrics)
 
     def test_inference_uses_trained_artifact_when_available(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

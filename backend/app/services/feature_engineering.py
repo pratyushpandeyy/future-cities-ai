@@ -14,6 +14,10 @@ from app.services.dataset_registry import available_dataset_keys
 from app.services.environmental_data import (
     get_environmental_context_for_features,
 )
+from app.services.providers.feature_provider import (
+    FeatureValue,
+    build_feature_package,
+)
 from app.services.spatial_resolution import resolve_spatial_context
 
 
@@ -79,26 +83,37 @@ def build_climate_feature_vector(
     season = payload.season.strip().lower()
     place_type = (spatial.resolved_location.place_type or "").lower()
     month = representative_month(payload.season, spatial.resolved_location.latitude)
-    climate_samples = load_climate_features(
+
+    feature_package = build_feature_package(
         latitude=spatial.resolved_location.latitude,
         longitude=spatial.resolved_location.longitude,
         year=payload.year,
+        warming_level=payload.warming_level,
         scenario=payload.climate_scenario,
+        season=season,
         month=month,
         model=payload.climate_model,
+        climate_region_type=climate_region,
+        defaults=defaults,
+        place_type=place_type,
+        city=spatial.resolved_location.city,
+        year_factor=year_factor,
+        warming_factor=warming_factor,
     )
-    future_tmax = climate_samples.get("tmax")
-    future_tmin = climate_samples.get("tmin")
-    future_precipitation = climate_samples.get("prec")
-    future_humidity = climate_samples.get("humidity")
-    future_wind = climate_samples.get("wind_speed")
-    future_solar = climate_samples.get("solar_radiation")
-    environmental = get_environmental_context_for_features(
-        latitude=spatial.resolved_location.latitude,
-        longitude=spatial.resolved_location.longitude,
-    )
+    provider_features = feature_package.by_name()
+    future_tmax = provider_features.get("future_monthly_tmax_c")
+    future_tmin = provider_features.get("future_monthly_tmin_c")
+    future_precipitation = provider_features.get("future_monthly_precipitation_mm")
+    future_humidity = provider_features.get("future_monthly_relative_humidity_pct")
+    future_wind = provider_features.get("future_monthly_wind_speed_m_s")
+    future_solar = provider_features.get("future_monthly_solar_radiation_w_m2")
+    vegetation = provider_features["vegetation_index"]
+    water_stress = provider_features["water_stress_index"]
+    urban_density = provider_features["urban_density_index"]
+    coastal_exposure = provider_features["coastal_exposure_index"]
+    elevation = provider_features["elevation_m"]
     heat_sample = (
-        normalize_temperature_heat(future_tmax.sampled_value)
+        normalize_temperature_heat(future_tmax.value)
         if future_tmax
         else spatial.climate_sampled_value
     )
@@ -108,7 +123,6 @@ def build_climate_feature_vector(
         if heat_sample is not None
         else clamp(0.42 + warming_factor * 0.36 + year_factor * 0.12)
     )
-    urban_density = infer_urban_density(place_type, spatial.resolved_location.city)
     precipitation_anomaly = (
         18 * warming_factor
         + (24 if season == "monsoon" else -8 if season == "summer" else 4)
@@ -124,12 +138,12 @@ def build_climate_feature_vector(
             value=round(heat_stress, 4),
             unit="normalized_0_1",
             source=(
-                future_tmax.raster_source
+                future_tmax.source_label()
                 if future_tmax
                 else spatial.climate_sample_source or "deterministic heat fallback"
             ),
             dataset_key=(
-                "worldclim_cmip6"
+                future_tmax.dataset
                 if future_tmax
                 else "demo_heat_stress_grid_v0"
                 if spatial.climate_sampled_value is not None
@@ -137,7 +151,7 @@ def build_climate_feature_vector(
             ),
             is_fallback=future_tmax is None,
             confidence=(
-                "high"
+                future_tmax.confidence
                 if future_tmax
                 else "medium"
                 if spatial.climate_sampled_value is not None
@@ -151,7 +165,7 @@ def build_climate_feature_vector(
         ),
         "relative_humidity_pct": fallback_feature(
             round(
-                future_humidity.sampled_value
+                future_humidity.value
                 if future_humidity
                 else defaults["humidity"] + warming_factor * 3,
                 3,
@@ -163,137 +177,48 @@ def build_climate_feature_vector(
                 else f"{climate_region} regional humidity prior"
             ),
         ),
-        "vegetation_index": fallback_feature(
-            round(
-                clamp(
-                    (
-                        environmental.green_cover_proxy
-                        if environmental.green_cover_proxy is not None
-                        else defaults["vegetation"]
-                    )
-                    - warming_factor * 0.09,
-                ),
-                4,
-            ),
-            "normalized_0_1",
-            (
-                "ESA WorldCover point-class green-cover proxy"
-                if environmental.green_cover_proxy is not None
-                else f"{climate_region} vegetation prior"
-            ),
-        ),
-        "water_stress_index": fallback_feature(
-            round(
-                clamp(
-                    defaults["water_stress"]
-                    + warming_factor * 0.16
-                    + (0.08 if season == "summer" else -0.05 if season == "monsoon" else 0),
-                ),
-                4,
-            ),
-            "normalized_0_1",
-            f"{climate_region} water-stress prior",
-        ),
-        "urban_density_index": fallback_feature(
-            (
-                max(urban_density, 0.85)
-                if environmental.built_up_proxy == 1.0
-                else urban_density
-            ),
-            "normalized_0_1",
-            (
-                "place-type prior adjusted by ESA WorldCover built-up class"
-                if environmental.built_up_proxy is not None
-                else f"place-type prior: {place_type or 'unknown'}"
-            ),
-        ),
-        "coastal_exposure_index": fallback_feature(
-            defaults["coastal"],
-            "normalized_0_1",
-            f"{climate_region} coastal-exposure prior",
-        ),
-        "elevation_m": fallback_feature(
-            (
-                environmental.elevation.value
-                if environmental.elevation
-                else defaults["elevation"]
-            ),
-            "meters",
-            (
-                "Copernicus DEM 30m remote COG"
-                if environmental.elevation
-                else f"{climate_region} elevation prior"
-            ),
-        ),
-        "future_time_index": EngineeredFeature(
-            value=round(year_factor, 4),
-            unit="normalized_0_1",
-            source="scenario input",
-            is_fallback=False,
-            confidence="high",
-        ),
-        "warming_level_c": EngineeredFeature(
-            value=payload.warming_level,
-            unit="degC",
-            source="scenario input",
-            is_fallback=False,
-            confidence="high",
-        ),
+        "vegetation_index": vegetation.to_engineered_feature(),
+        "water_stress_index": water_stress.to_engineered_feature(),
+        "urban_density_index": urban_density.to_engineered_feature(),
+        "coastal_exposure_index": coastal_exposure.to_engineered_feature(),
+        "elevation_m": elevation.to_engineered_feature(),
+        "future_time_index": provider_features[
+            "future_time_index"
+        ].to_engineered_feature(),
+        "warming_level_c": provider_features["warming_level_c"].to_engineered_feature(),
     }
-    add_climate_sample_feature(
+    add_feature_value(
         features,
         "future_monthly_tmax_c",
         future_tmax,
     )
-    add_climate_sample_feature(
+    add_feature_value(
         features,
         "future_monthly_tmin_c",
         future_tmin,
     )
-    add_climate_sample_feature(
+    add_feature_value(
         features,
         "future_monthly_precipitation_mm",
         future_precipitation,
     )
-    add_climate_sample_feature(
+    add_feature_value(
         features,
         "future_monthly_relative_humidity_pct",
         future_humidity,
     )
-    add_climate_sample_feature(
+    add_feature_value(
         features,
         "future_monthly_wind_speed_m_s",
         future_wind,
     )
-    add_climate_sample_feature(
+    add_feature_value(
         features,
         "future_monthly_solar_radiation_w_m2",
         future_solar,
     )
-    mark_environmental_feature_real(
-        features,
-        "relative_humidity_pct",
-        future_humidity is not None,
-        "nex_gddp_cmip6",
-    )
-    mark_environmental_feature_real(
-        features,
-        "elevation_m",
-        environmental.elevation is not None,
-        "copernicus_dem",
-    )
-    mark_environmental_feature_real(
-        features,
-        "vegetation_index",
-        environmental.land_cover is not None,
-        "esa_worldcover",
-    )
-    mark_environmental_feature_real(
-        features,
-        "urban_density_index",
-        environmental.land_cover is not None,
-        "esa_worldcover",
-    )
+    if future_humidity:
+        features["relative_humidity_pct"] = future_humidity.to_engineered_feature()
     fallback_feature_names = [
         name for name, feature in features.items() if feature.is_fallback
     ]
@@ -459,6 +384,17 @@ def add_climate_sample_feature(
         is_fallback=False,
         confidence="high",
     )
+
+
+def add_feature_value(
+    features: dict[str, EngineeredFeature],
+    name: str,
+    value: FeatureValue | None,
+) -> None:
+    if value is None:
+        return
+
+    features[name] = value.to_engineered_feature()
 
 
 def mark_environmental_feature_real(

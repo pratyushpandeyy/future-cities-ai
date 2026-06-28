@@ -1,0 +1,284 @@
+{
+  "dataset_name": "Future Cities AI boundary-derived training features v1",
+  "created_at": "2026-06-27T17:19:46.864436+00:00",
+  "feature_schema_version": "climate_features_v1",
+  "feature_names": [
+    "heat_stress_index",
+    "precipitation_anomaly_pct",
+    "relative_humidity_pct",
+    "vegetation_index",
+    "water_stress_index",
+    "urban_density_index",
+    "coastal_exposure_index",
+    "future_time_index",
+    "warming_level_c",
+    "future_monthly_tmax_c",
+    "future_monthly_precipitation_mm",
+    "future_monthly_wind_speed_m_s"
+  ],
+  "training_source": "database_boundary_centroids_with_raster_anchored_proxy_targets",
+  "target_source": "raster_anchored_proxy_labels_v1",
+  "boundary_sample_count": 5,
+  "notes": [
+    "Rows are sampled from imported administrative boundary polygons.",
+    "Representative points are bbox centers, not population-weighted centroids.",
+    "Targets remain raster/feature-anchored proxy labels until observed outcome labels are available."
+  ],
+  "rows": [
+    {
+      "metadata": {
+        "location": "Ab Band / AFG / geoBoundaries-AFG-ADM2_simplified / 173",
+        "boundary_id": 179,
+        "boundary_source": "geoboundaries:geoBoundaries-AFG-ADM2_simplified.geojson",
+        "resolved_name": "Ab Band / AFG / geoBoundaries-AFG-ADM2_simplified / 173",
+        "latitude": 32.8966081273552,
+        "longitude": 68.07307513765309,
+        "resolution_level": "admin_boundary",
+        "country": "AFG",
+        "climate_region_type": "continental",
+        "year": 2030,
+        "warming_level": 1.7,
+        "season": "Summer",
+        "time_of_day": "Afternoon",
+        "data_completeness": 0.429,
+        "confidence": "medium",
+        "fallback_feature_names": [
+          "temperature_anomaly_c",
+          "precipitation_anomaly_pct",
+          "relative_humidity_pct",
+          "vegetation_index",
+          "water_stress_index",
+          "urban_density_index",
+          "coastal_exposure_index",
+          "elevation_m"
+        ]
+      },
+      "features": {
+        "heat_stress_index": 0.6,
+        "precipitation_anomaly_pct": -3.8,
+        "relative_humidity_pct": 52.7,
+        "vegetation_index": 0.439,
+        "water_stress_index": 0.6173,
+        "urban_density_index": 0.42,
+        "coastal_exposure_index": 0.12,
+        "future_time_index": 0.0667,
+        "warming_level_c": 1.7,
+        "future_monthly_tmax_c": 33.0,
+        "future_monthly_precipitation_mm": 1.0,
+        "future_monthly_wind_speed_m_s": 2.5
+      },
+      "targets": {
+        "heat_adjustment": 11.749,
+        "flood_adjustment": 1.464,
+        "comfort_adjustment": -2.41,
+        "water_stress_adjustment": 6.712,
+        "livability_adjustment": -3.0087
+      },
+      "target_source": "raster_anchored_proxy_labels_v1"
+    },
+    {
+      "metadata": {
+        "location": "Ab Kamari / AFG / geoBoundaries-AFG-ADM2_simplified / 164",
+        "boundary_id": 170,
+        "boundary_source": "geoboundaries:geoBoundaries-AFG-ADM2_simplified.geojson",
+        "resolved_name": "Ab Kamari / AFG / geoBoundaries-AFG-ADM2_simplified / 164",
+        "latitude": 34.88746556863555,
+        "longitude": 62.8901237902082,
+        "resolution_level": "admin_boundary",
+        "country": "AFG",
+        "climate_region_type": "continental",
+        "year": 2030,
+        "warming_level": 1.7,
+        "season": "Summer",
+        "time_of_day": "Afternoon",
+        "data_completeness": 0.429,
+        "confidence": "medium",
+        "fallback_feature_names": [
+          "temperature_anomaly_c",
+          "precipitation_anomaly_pct",
+          "relative_humidity_pct",
+          "vegetation_index",
+          "water_stress_index",
+          "urban_density_index",
+          "coastal_exposure_index",
+          "elevation_m"
+        ]
+      },
+      "features": {
+        "heat_stress_index": 0.6967,
+        "precipitation_anomaly_pct": -3.8,
+        "relative_humidity_pct": 52.7,
+        "vegetation_index": 0.439,
+        "water_stress_index": 0.6173,
+        "urban_density_index": 0.42,
+        "coastal_exposure_index": 0.12,
+        "future_time_index": 0.0667,
+        "warming_level_c": 1.7,
+        "future_monthly_tmax_c": 35.9,
+        "future_monthly_precipitation_mm": 0.0,
+        "future_monthly_wind_speed_m_s": 2.5
+      },
+      "targets": {
+        "heat_adjustment": 16.2446,
+        "flood_adjustment": 1.464,
+        "comfort_adjustment": -4.6578,
+        "water_stress_adjustment": 7.3414,
+        "livability_adjustment": -3.9123
+      },
+      "target_source": "raster_anchored_proxy_labels_v1"
+    },
+    {
+      "metadata": {
+        "location": "Alto Zambeze / AGO / geoBoundaries-AGO-ADM2_simplified / 122",
+        "boundary_id": 526,
+        "boundary_source": "geoboundaries:geoBoundaries-AGO-ADM2_simplified.geojson",
+        "resolved_name": "Alto Zambeze / AGO / geoBoundaries-AGO-ADM2_simplified / 122",
+        "latitude": -12.201748501699797,
+        "longitude": 22.639161044228103,
+        "resolution_level": "admin_boundary",
+        "country": "AGO",
+        "climate_region_type": "continental",
+        "year": 2030,
+        "warming_level": 1.7,
+        "season": "Summer",
+        "time_of_day": "Afternoon",
+        "data_completeness": 0.429,
+        "confidence": "medium",
+        "fallback_feature_names": [
+          "temperature_anomaly_c",
+          "precipitation_anomaly_pct",
+          "relative_humidity_pct",
+          "vegetation_index",
+          "water_stress_index",
+          "urban_density_index",
+          "coastal_exposure_index",
+          "elevation_m"
+        ]
+      },
+      "features": {
+        "heat_stress_index": 0.3933,
+        "precipitation_anomaly_pct": -3.8,
+        "relative_humidity_pct": 52.7,
+        "vegetation_index": 0.439,
+        "water_stress_index": 0.6173,
+        "urban_density_index": 0.42,
+        "coastal_exposure_index": 0.12,
+        "future_time_index": 0.0667,
+        "warming_level_c": 1.7,
+        "future_monthly_tmax_c": 26.8,
+        "future_monthly_precipitation_mm": 231.0,
+        "future_monthly_wind_speed_m_s": 2.5
+      },
+      "targets": {
+        "heat_adjustment": 2.1384,
+        "flood_adjustment": 5.692,
+        "comfort_adjustment": 2.3953,
+        "water_stress_adjustment": 5.3665,
+        "livability_adjustment": -1.5843
+      },
+      "target_source": "raster_anchored_proxy_labels_v1"
+    },
+    {
+      "metadata": {
+        "location": "Ambaca / AGO / geoBoundaries-AGO-ADM2_simplified / 35",
+        "boundary_id": 439,
+        "boundary_source": "geoboundaries:geoBoundaries-AGO-ADM2_simplified.geojson",
+        "resolved_name": "Ambaca / AGO / geoBoundaries-AGO-ADM2_simplified / 35",
+        "latitude": -8.270352678454145,
+        "longitude": 15.475481753864926,
+        "resolution_level": "admin_boundary",
+        "country": "AGO",
+        "climate_region_type": "continental",
+        "year": 2030,
+        "warming_level": 1.7,
+        "season": "Summer",
+        "time_of_day": "Afternoon",
+        "data_completeness": 0.429,
+        "confidence": "medium",
+        "fallback_feature_names": [
+          "temperature_anomaly_c",
+          "precipitation_anomaly_pct",
+          "relative_humidity_pct",
+          "vegetation_index",
+          "water_stress_index",
+          "urban_density_index",
+          "coastal_exposure_index",
+          "elevation_m"
+        ]
+      },
+      "features": {
+        "heat_stress_index": 0.4133,
+        "precipitation_anomaly_pct": -3.8,
+        "relative_humidity_pct": 52.7,
+        "vegetation_index": 0.439,
+        "water_stress_index": 0.6173,
+        "urban_density_index": 0.42,
+        "coastal_exposure_index": 0.12,
+        "future_time_index": 0.0667,
+        "warming_level_c": 1.7,
+        "future_monthly_tmax_c": 27.4,
+        "future_monthly_precipitation_mm": 129.0,
+        "future_monthly_wind_speed_m_s": 2.5
+      },
+      "targets": {
+        "heat_adjustment": 3.0684,
+        "flood_adjustment": 2.836,
+        "comfort_adjustment": 1.9303,
+        "water_stress_adjustment": 5.4967,
+        "livability_adjustment": -1.4285
+      },
+      "target_source": "raster_anchored_proxy_labels_v1"
+    },
+    {
+      "metadata": {
+        "location": "12 de Octubre / ARG / geoBoundaries-ARG-ADM2_simplified / 188",
+        "boundary_id": 750,
+        "boundary_source": "geoboundaries:geoBoundaries-ARG-ADM2_simplified.geojson",
+        "resolved_name": "12 de Octubre / ARG / geoBoundaries-ARG-ADM2_simplified / 188",
+        "latitude": -27.324282589335233,
+        "longitude": -61.35391941141266,
+        "resolution_level": "admin_boundary",
+        "country": "ARG",
+        "climate_region_type": "continental",
+        "year": 2030,
+        "warming_level": 1.7,
+        "season": "Summer",
+        "time_of_day": "Afternoon",
+        "data_completeness": 0.429,
+        "confidence": "medium",
+        "fallback_feature_names": [
+          "temperature_anomaly_c",
+          "precipitation_anomaly_pct",
+          "relative_humidity_pct",
+          "vegetation_index",
+          "water_stress_index",
+          "urban_density_index",
+          "coastal_exposure_index",
+          "elevation_m"
+        ]
+      },
+      "features": {
+        "heat_stress_index": 0.6467,
+        "precipitation_anomaly_pct": -3.8,
+        "relative_humidity_pct": 52.7,
+        "vegetation_index": 0.439,
+        "water_stress_index": 0.6173,
+        "urban_density_index": 0.42,
+        "coastal_exposure_index": 0.12,
+        "future_time_index": 0.0667,
+        "warming_level_c": 1.7,
+        "future_monthly_tmax_c": 34.4,
+        "future_monthly_precipitation_mm": 124.0,
+        "future_monthly_wind_speed_m_s": 2.5
+      },
+      "targets": {
+        "heat_adjustment": 13.9196,
+        "flood_adjustment": 2.696,
+        "comfort_adjustment": -3.4953,
+        "water_stress_adjustment": 7.0159,
+        "livability_adjustment": -3.5928
+      },
+      "target_source": "raster_anchored_proxy_labels_v1"
+    }
+  ]
+}

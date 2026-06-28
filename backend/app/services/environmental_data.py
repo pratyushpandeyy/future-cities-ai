@@ -2,10 +2,12 @@ import math
 import os
 from dataclasses import dataclass
 from functools import lru_cache
+from pathlib import Path
 
 from app.models.schemas import EnvironmentalContext, EnvironmentalSample
 
 
+BACKEND_ROOT = Path(__file__).resolve().parents[2]
 COPERNICUS_DEM_BASE = (
     "https://copernicus-dem-30m.s3.eu-central-1.amazonaws.com"
 )
@@ -69,9 +71,14 @@ def get_environmental_context_for_features(
         "true",
         "yes",
     }:
+        land_cover = sample_worldcover(latitude, longitude, allow_remote=False)
         return EnvironmentalContext(
             latitude=latitude,
             longitude=longitude,
+            land_cover=land_cover,
+            green_cover_proxy=green_cover_proxy(land_cover),
+            built_up_proxy=built_up_proxy(land_cover),
+            providers_used=[land_cover.provider] if land_cover else [],
         )
 
     return get_environmental_context(
@@ -106,10 +113,19 @@ def sample_copernicus_elevation(
 def sample_worldcover(
     latitude: float,
     longitude: float,
+    *,
+    allow_remote: bool = True,
 ) -> EnvironmentalSample | None:
     tile = worldcover_tile(latitude, longitude)
-    url = worldcover_url(tile)
-    result = sample_remote_raster(url, latitude, longitude)
+    local_path = worldcover_local_path(tile)
+    if local_path.exists():
+        source = str(local_path)
+    elif allow_remote:
+        source = worldcover_url(tile)
+    else:
+        return None
+
+    result = sample_raster_source(source, latitude, longitude)
 
     if not result:
         return None
@@ -122,7 +138,7 @@ def sample_worldcover(
         value=float(class_code),
         unit="class_code",
         provider="esa_worldcover_2021",
-        source_url=url,
+        source_url=source,
         resolution="10m",
         grid_cell_id=f"worldcover:{tile}:r{result.row}:c{result.column}",
         confidence="high",
@@ -135,20 +151,33 @@ def sample_remote_raster(
     latitude: float,
     longitude: float,
 ) -> RasterPointResult | None:
+    return sample_raster_source(url, latitude, longitude)
+
+
+def sample_raster_source(
+    source: str,
+    latitude: float,
+    longitude: float,
+) -> RasterPointResult | None:
     try:
         import rasterio
     except ImportError:
         return None
 
     try:
-        with rasterio.Env(
-            GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR",
-            GDAL_HTTP_CONNECTTIMEOUT="10",
-            GDAL_HTTP_TIMEOUT="60",
-            GDAL_HTTP_MAX_RETRY="2",
-            CPL_VSIL_CURL_ALLOWED_EXTENSIONS=".tif",
-        ):
-            with rasterio.open(url) as dataset:
+        if source.startswith(("http://", "https://")):
+            env_options = {
+                "GDAL_DISABLE_READDIR_ON_OPEN": "EMPTY_DIR",
+                "GDAL_HTTP_CONNECTTIMEOUT": "10",
+                "GDAL_HTTP_TIMEOUT": "60",
+                "GDAL_HTTP_MAX_RETRY": "2",
+                "CPL_VSIL_CURL_ALLOWED_EXTENSIONS": ".tif",
+            }
+        else:
+            env_options = {}
+
+        with rasterio.Env(**env_options):
+            with rasterio.open(source) as dataset:
                 row, column = dataset.index(longitude, latitude)
                 value = float(
                     next(
@@ -195,6 +224,11 @@ def worldcover_tile(latitude: float, longitude: float) -> str:
 def worldcover_url(tile: str) -> str:
     filename = f"ESA_WorldCover_10m_2021_v200_{tile}_Map.tif"
     return f"{WORLD_COVER_BASE}/{filename}"
+
+
+def worldcover_local_path(tile: str) -> Path:
+    filename = f"ESA_WorldCover_10m_2021_v200_{tile}_Map.tif"
+    return BACKEND_ROOT / "data" / "raw" / "esa_worldcover" / "v200" / "2021" / filename
 
 
 def green_cover_proxy(

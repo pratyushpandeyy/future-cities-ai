@@ -62,6 +62,7 @@ These parts are real code paths, not just static UI:
 - Database/local/simulated boundary fallback order.
 - Hierarchical boundary resolution: locality/POI -> district -> city -> region -> country.
 - Generic GeoJSON boundary importer for geoBoundaries/GADM/OSM/Overture-style files.
+- Optional online OSM/Nominatim polygon fallback that caches successful boundaries into PostGIS.
 - Climate raster sampling interface using a small demo grid.
 - Climate surface API returning grid-like GeoJSON cells for map rendering.
 - Climate cell inspection endpoint.
@@ -154,6 +155,7 @@ backend/app/services/geocoding.py
 backend/app/services/simulation.py
 backend/app/services/boundaries.py
 backend/app/services/boundary_resolution.py
+backend/app/services/online_boundaries.py
 backend/app/services/climate_engine.py
 backend/app/services/ai_explanation.py
 backend/app/services/recommendation_engine.py
@@ -181,6 +183,7 @@ backend/app/db/session.py
 backend/app/db/models.py
 backend/scripts/seed_boundaries.py
 backend/scripts/import_boundaries.py
+backend/scripts/download_geoboundaries.py
 ```
 
 ## Spatial Resolution V1
@@ -312,6 +315,7 @@ regionalMapping changes
 -> boundary service builds geocoder hierarchy
 -> boundary service checks database from specific to broad
 -> fallback to local GeoJSON
+-> fallback to online OSM/Nominatim polygon lookup and DB cache
 -> fallback to simulated polygon
 -> MapboxView renders boundary/overlay
 ```

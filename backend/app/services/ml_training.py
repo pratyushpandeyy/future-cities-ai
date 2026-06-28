@@ -14,7 +14,8 @@ BACKEND_ROOT = Path(__file__).resolve().parents[2]
 MODEL_DIR = BACKEND_ROOT / "data" / "models"
 DEFAULT_MODEL_PATH = MODEL_DIR / "climate_adjustment_model_v1.json"
 TRAINED_MODEL_VERSION = "trained_linear_adjustment_v2"
-MODEL_TYPE = "ordinary_least_squares_linear_regression"
+MODEL_TYPE = "ridge_regularized_linear_regression"
+RIDGE_ALPHA = 0.15
 
 FEATURE_NAMES = [
     "heat_stress_index",
@@ -91,6 +92,15 @@ def train_climate_adjustment_model(
         "target_names": TARGET_NAMES,
         "coefficients": coefficients,
         "metrics": metrics,
+        "validation_strategy": (
+            "deterministic every-fifth-row holdout when at least ten rows are "
+            "available; otherwise train metrics are mirrored as validation metrics"
+        ),
+        "regularization": {
+            "type": "ridge_l2",
+            "alpha": RIDGE_ALPHA,
+            "intercept_regularized": False,
+        },
         "notes": [
             "Supervised baseline trained from harvested feature rows when available.",
             target_note,
@@ -435,25 +445,82 @@ def fit_linear_models(
             "numpy is required to train the climate adjustment model",
         ) from exc
 
-    x = np.array(
+    x_all = np.array(
         [
             [1.0, *[row["features"][feature] for feature in FEATURE_NAMES]]
             for row in rows
         ],
         dtype=float,
     )
+    train_indices, validation_indices = split_train_validation_indices(len(rows))
+    x_train = x_all[train_indices]
+    x_validation = x_all[validation_indices]
     coefficients: dict[str, list[float]] = {}
     metrics: dict[str, float] = {}
 
     for target in TARGET_NAMES:
-        y = np.array([row["targets"][target] for row in rows], dtype=float)
-        beta, *_ = np.linalg.lstsq(x, y, rcond=None)
-        predicted = x @ beta
-        errors = [abs(float(actual - pred)) for actual, pred in zip(y, predicted)]
+        y_all = np.array([row["targets"][target] for row in rows], dtype=float)
+        y_train = y_all[train_indices]
+        y_validation = y_all[validation_indices]
+        beta = fit_ridge_coefficients(np, x_train, y_train, alpha=RIDGE_ALPHA)
+        train_predicted = x_train @ beta
+        validation_predicted = x_validation @ beta
+        train_errors = [
+            abs(float(actual - pred))
+            for actual, pred in zip(y_train, train_predicted)
+        ]
+        validation_errors = [
+            abs(float(actual - pred))
+            for actual, pred in zip(y_validation, validation_predicted)
+        ]
         coefficients[target] = [round(float(value), 8) for value in beta]
-        metrics[f"{target}_mae"] = round(mean(errors), 4)
+        metrics[f"{target}_train_mae"] = round(mean(train_errors), 4)
+        metrics[f"{target}_validation_mae"] = round(mean(validation_errors), 4)
+        metrics[f"{target}_validation_r2"] = round(
+            r2_score(y_validation, validation_predicted),
+            4,
+        )
+        # Backward-compatible summary metric used by existing status displays.
+        metrics[f"{target}_mae"] = metrics[f"{target}_validation_mae"]
 
     return coefficients, metrics
+
+
+def split_train_validation_indices(row_count: int) -> tuple[list[int], list[int]]:
+    if row_count < 10:
+        indices = list(range(row_count))
+        return indices, indices
+
+    validation_indices = [
+        index for index in range(row_count) if index % 5 == 0
+    ]
+    train_indices = [
+        index for index in range(row_count) if index not in validation_indices
+    ]
+
+    return train_indices, validation_indices
+
+
+def fit_ridge_coefficients(np, x, y, *, alpha: float):
+    penalty = np.eye(x.shape[1]) * alpha
+    penalty[0, 0] = 0.0
+
+    return np.linalg.solve(x.T @ x + penalty, x.T @ y)
+
+
+def r2_score(y_true, y_predicted) -> float:
+    try:
+        import numpy as np
+    except ImportError:
+        return 0.0
+
+    residual_sum = float(np.sum((y_true - y_predicted) ** 2))
+    total_sum = float(np.sum((y_true - np.mean(y_true)) ** 2))
+
+    if total_sum == 0:
+        return 1.0 if residual_sum == 0 else 0.0
+
+    return 1 - residual_sum / total_sum
 
 
 def dot(left: list[float], right: list[float]) -> float:

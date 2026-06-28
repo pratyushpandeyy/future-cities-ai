@@ -127,6 +127,21 @@ GADM, OSM exports, or Overture-derived GeoJSON:
 
 ```powershell
 cd backend
+python scripts/download_geoboundaries.py --countries IND,GBR,TUR,ESP --admin-levels ADM2 --confirm
+python scripts/import_boundaries.py --input data/raw/geoboundaries --provider geoboundaries --region-type administrative_boundary
+```
+
+The downloader defaults to simplified GeoJSON so the local database stays
+manageable. Use `--full-geometry` only when boundary precision matters more
+than disk/database size. For broader coverage, add more ISO3 country codes or
+admin levels, for example `--countries IND,GBR,TUR,ESP,USA --admin-levels ADM1,ADM2`.
+
+For broad city/district-level coverage across the largest countries, use the
+top-100 population preset. Run it once without `--confirm` to inspect the plan:
+
+```powershell
+python scripts/download_geoboundaries.py --preset top100-population --admin-levels ADM2
+python scripts/download_geoboundaries.py --preset top100-population --admin-levels ADM2 --confirm
 python scripts/import_boundaries.py --input data/raw/geoboundaries --provider geoboundaries --region-type administrative_boundary
 ```
 
@@ -138,6 +153,14 @@ locality/POI input -> district -> city -> state/region -> country. If a
 locality polygon is missing, the service can still match an imported city,
 district, or state polygon before falling back to local seed files or a
 simulated bbox.
+
+If no database/local boundary matches, the backend can optionally try an
+online OSM/Nominatim `polygon_geojson` lookup and cache the successful polygon
+back into PostGIS. Control this with:
+
+```env
+ONLINE_BOUNDARY_LOOKUP_ENABLED=true
+```
 
 Resolve a place into one combined spatial context:
 

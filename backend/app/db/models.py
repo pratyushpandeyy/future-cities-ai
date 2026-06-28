@@ -125,6 +125,44 @@ class ClimateDataset(Base):
     )
 
 
+class ClimateFeatureCache(Base):
+    __tablename__ = "climate_feature_cache"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    cache_key: Mapped[str] = mapped_column(
+        String(700),
+        unique=True,
+        nullable=False,
+        index=True,
+    )
+    query: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
+    resolved_name: Mapped[str] = mapped_column(String(500), nullable=False, index=True)
+    latitude: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    longitude: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    year: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
+    warming_level: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    season: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    time_of_day: Mapped[str] = mapped_column(String(80), nullable=False)
+    climate_scenario: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    climate_model: Mapped[str | None] = mapped_column(String(120), nullable=True, index=True)
+    climate_region_type: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    data_completeness: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    confidence: Mapped[str] = mapped_column(String(80), nullable=False, index=True)
+    fallback_feature_names: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    feature_vector_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime,
+        default=datetime.utcnow,
+        onupdate=datetime.utcnow,
+        nullable=False,
+    )
+
+
 class SavedScenario(Base):
     __tablename__ = "saved_scenarios"
 

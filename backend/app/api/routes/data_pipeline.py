@@ -3,6 +3,10 @@ from pathlib import Path
 
 from app.models.schemas import (
     ClimateDatasetRecord,
+    ClimateFeatureCacheExportRequest,
+    ClimateFeatureCacheExportResponse,
+    ClimateFeatureCacheRecord,
+    ClimateFeatureCacheStats,
     ClimateFeatureHarvestRequest,
     ClimateFeatureHarvestResponse,
     ClimateFeatureVector,
@@ -12,6 +16,12 @@ from app.models.schemas import (
     FeatureBuildRequest,
 )
 from app.services.dataset_registry import get_dataset, list_datasets
+from app.services.feature_cache import (
+    cache_feature_vector,
+    export_feature_cache_training_dataset,
+    feature_cache_stats,
+    list_feature_cache_records,
+)
 from app.services.feature_engineering import build_climate_feature_vector
 from app.services.feature_harvesting import harvest_climate_training_features
 from app.services.ml_training import get_model_status, train_climate_adjustment_model
@@ -37,7 +47,40 @@ def dataset_detail(dataset_key: str) -> ClimateDatasetRecord:
 
 @router.post("/features/build", response_model=ClimateFeatureVector)
 def build_features(payload: FeatureBuildRequest) -> ClimateFeatureVector:
-    return build_climate_feature_vector(payload)
+    feature_vector = build_climate_feature_vector(payload)
+    cache_feature_vector(
+        feature_vector,
+        climate_scenario=payload.climate_scenario,
+        climate_model=payload.climate_model,
+    )
+    return feature_vector
+
+
+@router.get("/features/cache", response_model=list[ClimateFeatureCacheRecord])
+def feature_cache(limit: int = 100) -> list[ClimateFeatureCacheRecord]:
+    return list_feature_cache_records(limit=limit)
+
+
+@router.get("/features/cache/stats", response_model=ClimateFeatureCacheStats)
+def feature_cache_summary() -> ClimateFeatureCacheStats:
+    return feature_cache_stats()
+
+
+@router.post(
+    "/features/cache/export",
+    response_model=ClimateFeatureCacheExportResponse,
+)
+def export_feature_cache(
+    payload: ClimateFeatureCacheExportRequest,
+) -> ClimateFeatureCacheExportResponse:
+    output_path = (
+        Path(payload.output_path)
+        if payload.output_path
+        else Path("data/models/cached_feature_training_dataset_v1.json")
+    )
+    return ClimateFeatureCacheExportResponse(
+        **export_feature_cache_training_dataset(output_path),
+    )
 
 
 @router.post("/features/harvest", response_model=ClimateFeatureHarvestResponse)

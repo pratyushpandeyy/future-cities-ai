@@ -23,12 +23,86 @@ NOMINATIM_USER_AGENT = os.getenv(
     "future-cities-ai-dev/0.1",
 )
 
+LOCALITY_SEEDS = {
+    "whitefield": {
+        "location_name": "Whitefield",
+        "region": "Karnataka",
+        "latitude": 12.9698,
+        "longitude": 77.7499,
+        "locality": "Whitefield",
+        "district": "Bengaluru Urban",
+        "city": "Bengaluru",
+        "country": "India",
+        "place_type": "neighborhood",
+    },
+    "koramangala": {
+        "location_name": "Koramangala",
+        "region": "Karnataka",
+        "latitude": 12.9352,
+        "longitude": 77.6245,
+        "locality": "Koramangala",
+        "district": "Bengaluru Urban",
+        "city": "Bengaluru",
+        "country": "India",
+        "place_type": "neighborhood",
+    },
+    "bandra": {
+        "location_name": "Bandra",
+        "region": "Maharashtra",
+        "latitude": 19.0596,
+        "longitude": 72.8295,
+        "locality": "Bandra",
+        "district": "Mumbai Suburban",
+        "city": "Mumbai",
+        "country": "India",
+        "place_type": "neighborhood",
+    },
+    "kadikoy": {
+        "location_name": "Kadikoy",
+        "region": "Istanbul",
+        "latitude": 40.9919,
+        "longitude": 29.0252,
+        "locality": "Kadikoy",
+        "district": "Istanbul",
+        "city": "Istanbul",
+        "country": "Turkey",
+        "place_type": "neighborhood",
+    },
+    "chelsea": {
+        "location_name": "Chelsea",
+        "region": "Greater London",
+        "latitude": 51.4875,
+        "longitude": -0.1687,
+        "locality": "Chelsea",
+        "district": "Greater London",
+        "city": "London",
+        "country": "United Kingdom",
+        "place_type": "neighborhood",
+    },
+    "brooklyn": {
+        "location_name": "Brooklyn",
+        "region": "New York",
+        "latitude": 40.6782,
+        "longitude": -73.9442,
+        "locality": "Brooklyn",
+        "district": "Kings County",
+        "city": "New York",
+        "country": "United States",
+        "place_type": "borough",
+    },
+}
+
 
 def geocode_location(query: str, parent_location: str | None = None) -> LocationResult | None:
     cleaned_query = build_geocoder_query(query, parent_location)
 
     if not cleaned_query:
         return None
+
+    seeded_result = geocode_seeded_locality(cleaned_query)
+
+    if seeded_result:
+        return seeded_result
 
     if MAPBOX_GEOCODING_TOKEN:
         mapbox_result = geocode_with_mapbox(cleaned_query)
@@ -37,6 +111,29 @@ def geocode_location(query: str, parent_location: str | None = None) -> Location
             return mapbox_result
 
     return geocode_with_nominatim(cleaned_query)
+
+
+def geocode_location_suggestions(
+    query: str,
+    parent_location: str | None = None,
+    limit: int = 6,
+) -> list[LocationResult]:
+    cleaned_query = build_geocoder_query(query, parent_location)
+
+    if len(cleaned_query) < 2:
+        return []
+
+    seeded_results = geocode_seeded_suggestions(cleaned_query)
+
+    if MAPBOX_GEOCODING_TOKEN:
+        mapbox_results = geocode_with_mapbox_many(cleaned_query, limit=limit)
+
+        if mapbox_results:
+            return dedupe_location_results(seeded_results + mapbox_results)[:limit]
+
+    return dedupe_location_results(
+        seeded_results + geocode_with_nominatim_many(cleaned_query, limit=limit),
+    )[:limit]
 
 
 def build_geocoder_query(query: str, parent_location: str | None = None) -> str:
@@ -55,13 +152,73 @@ def build_geocoder_query(query: str, parent_location: str | None = None) -> str:
     return f"{cleaned_query}, {cleaned_parent}"
 
 
+def geocode_seeded_locality(query: str) -> LocationResult | None:
+    normalized = query.lower()
+
+    for key, seed in LOCALITY_SEEDS.items():
+        if key in normalized:
+            return location_result_from_seed(key, seed)
+
+    return None
+
+
+def geocode_seeded_suggestions(query: str) -> list[LocationResult]:
+    normalized = query.lower()
+
+    return [
+        location_result_from_seed(key, seed)
+        for key, seed in LOCALITY_SEEDS.items()
+        if normalized in key or key in normalized
+    ]
+
+
+def location_result_from_seed(
+    key: str,
+    seed: dict[str, object],
+) -> LocationResult:
+    hierarchy_label = build_hierarchy_label(
+        [
+            str(seed.get("locality") or ""),
+            str(seed.get("district") or ""),
+            str(seed.get("city") or ""),
+            str(seed.get("region") or ""),
+            str(seed.get("country") or ""),
+        ],
+    )
+
+    return LocationResult(
+        location_name=str(seed["location_name"]),
+        region=str(seed["region"]),
+        climate_zone="Seeded locality climate cell",
+        latitude=float(seed["latitude"]),
+        longitude=float(seed["longitude"]),
+        locality=seed.get("locality"),
+        district=seed.get("district"),
+        city=seed.get("city"),
+        country=seed.get("country"),
+        hierarchy_label=hierarchy_label,
+        place_type=str(seed.get("place_type") or "locality"),
+        geocoder_provider="seeded_locality",
+        geocoder_metadata={"seed_key": key, "source": "mvp_locality_catalog"},
+        known=True,
+        extrapolated=False,
+        location_id=f"seed-{key}",
+    )
+
+
 def geocode_with_mapbox(query: str) -> LocationResult | None:
+    results = geocode_with_mapbox_many(query, limit=1)
+
+    return results[0] if results else None
+
+
+def geocode_with_mapbox_many(query: str, limit: int = 6) -> list[LocationResult]:
     encoded_query = quote(query)
     params = urlencode(
         {
             "access_token": MAPBOX_GEOCODING_TOKEN,
-            "limit": 1,
-            "types": "country,region,district,place,locality,neighborhood,address",
+            "limit": max(1, min(limit, 10)),
+            "types": "country,region,district,place,locality,neighborhood",
         },
     )
     url = (
@@ -71,14 +228,28 @@ def geocode_with_mapbox(query: str) -> LocationResult | None:
     payload = fetch_json(url)
 
     if not payload:
-        return None
+        return []
 
     features = payload.get("features") or []
 
     if not features:
-        return None
+        return []
 
-    feature = features[0]
+    results = []
+
+    for feature in features:
+        location = location_result_from_mapbox_feature(feature, query)
+
+        if location and is_suggestable_location(location):
+            results.append(location)
+
+    return results
+
+
+def location_result_from_mapbox_feature(
+    feature: dict,
+    query: str,
+) -> LocationResult | None:
     center = feature.get("center") or []
 
     if len(center) < 2:
@@ -136,21 +307,41 @@ def geocode_with_mapbox(query: str) -> LocationResult | None:
 
 
 def geocode_with_nominatim(query: str) -> LocationResult | None:
+    results = geocode_with_nominatim_many(query, limit=1)
+
+    return results[0] if results else None
+
+
+def geocode_with_nominatim_many(query: str, limit: int = 6) -> list[LocationResult]:
     params = urlencode(
         {
             "q": query,
             "format": "jsonv2",
             "addressdetails": 1,
-            "limit": 1,
+            "limit": max(1, min(limit, 10)),
         },
     )
     url = f"https://nominatim.openstreetmap.org/search?{params}"
     payload = fetch_json(url, user_agent=NOMINATIM_USER_AGENT)
 
     if not payload:
-        return None
+        return []
 
-    result = payload[0]
+    results = []
+
+    for result in payload:
+        location = location_result_from_nominatim_result(result, query)
+
+        if location and is_suggestable_location(location):
+            results.append(location)
+
+    return results
+
+
+def location_result_from_nominatim_result(
+    result: dict,
+    query: str,
+) -> LocationResult | None:
     address = result.get("address") or {}
     place_type = detect_nominatim_place_type(result, address)
     locality = first_present(
@@ -187,6 +378,9 @@ def geocode_with_nominatim(query: str) -> LocationResult | None:
     hierarchy_label = build_hierarchy_label(
         [locality, district, city, region, country],
     )
+
+    if "lat" not in result or "lon" not in result:
+        return None
 
     return LocationResult(
         location_name=location_name,
@@ -269,6 +463,53 @@ def build_hierarchy_label(parts: list[str | None]) -> str | None:
         return None
 
     return " / ".join(unique_parts)
+
+
+def dedupe_location_results(results: list[LocationResult]) -> list[LocationResult]:
+    deduped = []
+    seen = set()
+
+    for result in results:
+        key = (
+            result.location_name.lower(),
+            result.region.lower(),
+            round(result.latitude, 4),
+            round(result.longitude, 4),
+        )
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        deduped.append(result)
+
+    return deduped
+
+
+def is_suggestable_location(location: LocationResult) -> bool:
+    place_type = (location.place_type or "").lower()
+
+    if place_type in {
+        "neighborhood",
+        "locality",
+        "suburb",
+        "quarter",
+        "district",
+        "borough",
+        "county",
+        "place",
+        "city",
+        "town",
+        "village",
+        "municipality",
+        "region",
+        "state",
+        "province",
+        "country",
+    }:
+        return True
+
+    return False
 
 
 def detect_nominatim_place_type(result: dict, address: dict) -> str:

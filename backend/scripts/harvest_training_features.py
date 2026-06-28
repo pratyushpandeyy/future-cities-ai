@@ -88,6 +88,7 @@ def main() -> None:
     print(f"location_count: {result.location_count}")
     print(f"fallback_row_count: {result.fallback_row_count}")
     print(f"real_data_row_count: {result.real_data_row_count}")
+    print(f"high_completeness_row_count: {result.high_completeness_row_count}")
 
 
 if __name__ == "__main__":

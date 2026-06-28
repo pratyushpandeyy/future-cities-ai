@@ -59,6 +59,7 @@ def harvest_climate_training_features(
             training_source="existing_harvested_feature_dataset",
             fallback_row_count=count_fallback_rows(existing),
             real_data_row_count=count_real_data_rows(existing),
+            high_completeness_row_count=count_high_completeness_rows(existing),
             message=(
                 "Harvested feature dataset already exists. Pass overwrite=true "
                 "to rebuild it from the current data providers."
@@ -96,6 +97,7 @@ def harvest_climate_training_features(
         training_source="harvested_feature_vectors_with_raster_anchored_proxy_targets",
         fallback_row_count=count_fallback_rows(rows),
         real_data_row_count=count_real_data_rows(rows),
+        high_completeness_row_count=count_high_completeness_rows(rows),
         message="Harvested climate feature dataset for ML training.",
     )
 
@@ -199,4 +201,29 @@ def count_fallback_rows(rows: list[dict[str, object]]) -> int:
 
 
 def count_real_data_rows(rows: list[dict[str, object]]) -> int:
+    real_feature_names = {
+        "heat_stress_index",
+        "future_monthly_tmax_c",
+        "future_monthly_tmin_c",
+        "future_monthly_precipitation_mm",
+        "future_monthly_relative_humidity_pct",
+        "future_monthly_wind_speed_m_s",
+        "future_monthly_solar_radiation_w_m2",
+        "vegetation_index",
+        "urban_density_index",
+        "elevation_m",
+    }
+
+    return sum(
+        1
+        for row in rows
+        if isinstance(row.get("metadata"), dict)
+        and any(
+            feature_name not in set(row["metadata"].get("fallback_feature_names", []))
+            for feature_name in real_feature_names
+        )
+    )
+
+
+def count_high_completeness_rows(rows: list[dict[str, object]]) -> int:
     return len(rows) - count_fallback_rows(rows)

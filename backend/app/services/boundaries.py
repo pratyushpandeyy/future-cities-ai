@@ -2,6 +2,7 @@ import json
 from functools import lru_cache
 from pathlib import Path
 
+from sqlalchemy import String, cast, or_
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
@@ -17,6 +18,7 @@ from app.services.boundary_resolution import (
     boundary_search_hierarchy,
     match_boundary_candidates,
 )
+from app.services.online_boundaries import fetch_online_boundary
 from app.services.simulation import resolve_location
 
 
@@ -106,6 +108,29 @@ def get_region_boundary(
                 geojson=geojson,
             )
 
+    online_geojson, online_match_reason = fetch_online_boundary(location, location_result)
+
+    if online_geojson:
+        polygon = extract_polygon_ring(online_geojson)
+
+        if polygon:
+            cached_boundary_id = cache_online_boundary(
+                location_result,
+                online_geojson,
+                online_match_reason,
+            )
+            return RegionBoundaryResponse(
+                location=location_result,
+                boundary_source="online_osm",
+                boundary_name=extract_boundary_name(online_geojson)
+                or location_result.location_name,
+                boundary_match_reason=online_match_reason,
+                climate_region_type=infer_location_climate_region(location_result),
+                db_boundary_id=cached_boundary_id,
+                polygon=polygon,
+                geojson=online_geojson,
+            )
+
     return simulated_boundary(location_result)
 
 
@@ -129,16 +154,76 @@ def match_database_boundary(
     location_result: LocationResult,
 ) -> tuple[AdministrativeBoundary | None, str | None]:
     candidates = boundary_search_hierarchy(location, location_result)
-    boundaries = session.query(AdministrativeBoundary).all()
+    boundaries_by_id: dict[int, AdministrativeBoundary] = {}
 
     for candidate in candidates:
-        for boundary in boundaries:
+        normalized_candidate = normalize_boundary_candidate(candidate.value)
+
+        if not normalized_candidate:
+            continue
+
+        for mode in ("exact_name", "fuzzy_name", "alias"):
+            if mode != "exact_name" and len(normalized_candidate) < 3:
+                continue
+
+            matching_boundaries = query_database_boundaries(
+                session,
+                normalized_candidate,
+                mode=mode,
+            )
+
+            for boundary in matching_boundaries:
+                boundaries_by_id[boundary.id] = boundary
+
+            for boundary in matching_boundaries:
+                match = match_boundary_candidates(boundary, [candidate])
+
+                if match:
+                    return boundary, f"database hierarchy {match[1]}"
+
+    for candidate in candidates:
+        for boundary in boundaries_by_id.values():
             match = match_boundary_candidates(boundary, [candidate])
 
             if match:
                 return boundary, f"database hierarchy {match[1]}"
 
     return None, "no database boundary matched search metadata"
+
+
+def query_database_boundaries(
+    session: Session,
+    normalized_candidate: str,
+    *,
+    mode: str,
+) -> list[AdministrativeBoundary]:
+    if mode == "exact_name":
+        filters = [
+            AdministrativeBoundary.name.ilike(normalized_candidate),
+            AdministrativeBoundary.country.ilike(normalized_candidate),
+        ]
+    elif mode == "alias":
+        filters = [
+            cast(AdministrativeBoundary.aliases, String).ilike(
+                f"%{normalized_candidate}%",
+            ),
+        ]
+    else:
+        filters = [
+            AdministrativeBoundary.name.ilike(f"%{normalized_candidate}%"),
+        ]
+
+    return (
+        session.query(AdministrativeBoundary)
+        .filter(or_(*filters))
+        .order_by(AdministrativeBoundary.name.asc())
+        .limit(60)
+        .all()
+    )
+
+
+def normalize_boundary_candidate(value: str) -> str:
+    return " ".join(value.strip().lower().replace(",", " ").split())
 
 
 def find_boundary_file(
@@ -371,6 +456,117 @@ def get_database_boundary_detail(boundary_id: int) -> AdminBoundaryDetail | None
             )
     except SQLAlchemyError:
         return None
+
+
+def cache_online_boundary(
+    location_result: LocationResult,
+    geojson: dict[str, object],
+    match_reason: str | None,
+) -> int | None:
+    if not is_database_configured() or SessionLocal is None:
+        return None
+
+    boundary_name = online_boundary_record_name(location_result)
+    aliases = online_boundary_aliases(location_result)
+    source = online_boundary_source(match_reason)
+
+    try:
+        with SessionLocal() as session:
+            existing = (
+                session.query(AdministrativeBoundary)
+                .filter(AdministrativeBoundary.name == boundary_name)
+                .one_or_none()
+            )
+
+            if existing:
+                existing.aliases = aliases
+                existing.country = location_result.country
+                existing.region_type = location_result.place_type or "online_boundary"
+                existing.climate_region_type = infer_location_climate_region(
+                    location_result,
+                )
+                existing.source = source
+                existing.geometry_geojson = geojson
+                session.commit()
+                return existing.id
+
+            boundary = AdministrativeBoundary(
+                name=boundary_name,
+                aliases=aliases,
+                country=location_result.country,
+                region_type=location_result.place_type or "online_boundary",
+                climate_region_type=infer_location_climate_region(location_result),
+                source=source,
+                geometry_geojson=geojson,
+            )
+            session.add(boundary)
+            session.commit()
+            session.refresh(boundary)
+            return boundary.id
+    except SQLAlchemyError:
+        return None
+
+
+def online_boundary_record_name(location_result: LocationResult) -> str:
+    parts = [
+        location_result.locality,
+        location_result.district,
+        location_result.city,
+        location_result.region,
+        location_result.country,
+    ]
+    unique_parts = []
+
+    for part in parts:
+        if part and part not in unique_parts:
+            unique_parts.append(part)
+
+    if unique_parts:
+        return " / ".join(unique_parts)
+
+    return location_result.location_name
+
+
+def online_boundary_aliases(location_result: LocationResult) -> list[str]:
+    aliases = [
+        location_result.location_name,
+        location_result.locality,
+        location_result.district,
+        location_result.city,
+        location_result.region,
+        location_result.country,
+        location_result.hierarchy_label,
+    ]
+
+    return sorted(set(filter(None, aliases)))
+
+
+def online_boundary_source(match_reason: str | None) -> str:
+    return f"online_osm:{match_reason or 'nominatim'}"[:120]
+
+
+def infer_location_climate_region(location_result: LocationResult) -> str:
+    region_text = " ".join(
+        filter(
+            None,
+            [
+                location_result.region,
+                location_result.country,
+                location_result.hierarchy_label,
+            ],
+        ),
+    ).lower()
+
+    if any(term in region_text for term in ["india", "mumbai", "maharashtra"]):
+        return "tropical_humid"
+
+    if any(term in region_text for term in ["spain", "madrid", "turkey", "istanbul"]):
+        return "mediterranean"
+
+    if any(term in region_text for term in ["united kingdom", "england", "ireland"]):
+        return "temperate_oceanic"
+
+    return "continental"
 
 
 def boundary_to_summary(boundary: AdministrativeBoundary) -> AdminBoundarySummary:

@@ -607,7 +607,48 @@ class ClimateFeatureHarvestResponse(BaseModel):
     training_source: str
     fallback_row_count: int
     real_data_row_count: int
+    high_completeness_row_count: int = 0
     message: str
+
+
+class ClimateFeatureCacheRecord(BaseModel):
+    id: int
+    cache_key: str
+    query: str
+    resolved_name: str
+    latitude: float
+    longitude: float
+    year: int
+    warming_level: float
+    season: str
+    climate_scenario: str
+    climate_model: str | None = None
+    climate_region_type: str
+    data_completeness: float
+    confidence: str
+    fallback_feature_count: int
+    updated_at: datetime
+
+
+class ClimateFeatureCacheStats(BaseModel):
+    cached_feature_count: int
+    location_count: int
+    fallback_row_count: int
+    real_data_row_count: int
+    high_completeness_row_count: int
+
+
+class ClimateFeatureCacheExportRequest(BaseModel):
+    output_path: str | None = None
+
+
+class ClimateFeatureCacheExportResponse(BaseModel):
+    output_path: str
+    row_count: int
+    location_count: int
+    fallback_row_count: int
+    real_data_row_count: int
+    high_completeness_row_count: int
 
 
 class AdminBoundarySummary(BaseModel):

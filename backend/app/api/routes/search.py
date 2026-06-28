@@ -1,7 +1,7 @@
 from fastapi import APIRouter
 
 from app.models.schemas import LocationResult
-from app.services.geocoding import geocode_location
+from app.services.geocoding import geocode_location, geocode_location_suggestions
 from app.services.simulation import search_location
 
 router = APIRouter(prefix="/api", tags=["search"])
@@ -39,6 +39,19 @@ def search(query: str, parent_location: str | None = None) -> LocationResult:
         return geocoded_location
 
     return search_location(lookup_query)
+
+
+@router.get("/search/suggestions", response_model=list[LocationResult])
+def search_suggestions(
+    query: str,
+    parent_location: str | None = None,
+    limit: int = 6,
+) -> list[LocationResult]:
+    return geocode_location_suggestions(
+        query,
+        parent_location=parent_location,
+        limit=limit,
+    )
 
 
 def build_lookup_query(query: str, parent_location: str | None) -> str:
