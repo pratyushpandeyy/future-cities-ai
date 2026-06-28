@@ -26,6 +26,12 @@ type RegionClimateProperties = {
   livability: number;
   water: number;
   alpha: number;
+  gridCellId?: string;
+  layerType?: string;
+  normalizedScore?: number;
+  sampledValue?: number;
+  rasterSource?: string;
+  confidenceLevel?: string;
 };
 
 export type RegionClimateFeatureCollection = FeatureCollection<

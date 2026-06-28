@@ -33,7 +33,7 @@ class ClimateModelInferenceTests(unittest.TestCase):
         )
         self.assertEqual(
             hot_prediction.model_version,
-            "deterministic_linear_baseline_v1",
+            "trained_linear_adjustment_v2",
         )
 
     def test_prediction_is_deterministic(self) -> None:

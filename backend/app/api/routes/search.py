@@ -8,11 +8,12 @@ router = APIRouter(prefix="/api", tags=["search"])
 
 
 @router.get("/search", response_model=LocationResult)
-def search(query: str) -> LocationResult:
-    geocoded_location = geocode_location(query)
+def search(query: str, parent_location: str | None = None) -> LocationResult:
+    geocoded_location = geocode_location(query, parent_location=parent_location)
+    lookup_query = build_lookup_query(query, parent_location)
 
     if geocoded_location:
-        simulated_location = search_location(query)
+        simulated_location = search_location(lookup_query)
 
         if simulated_location.known:
             return LocationResult(
@@ -37,4 +38,20 @@ def search(query: str) -> LocationResult:
 
         return geocoded_location
 
-    return search_location(query)
+    return search_location(lookup_query)
+
+
+def build_lookup_query(query: str, parent_location: str | None) -> str:
+    if not parent_location:
+        return query
+
+    cleaned_query = query.strip()
+    cleaned_parent = parent_location.strip()
+
+    if not cleaned_query:
+        return cleaned_parent
+
+    if not cleaned_parent or cleaned_parent.lower() in cleaned_query.lower():
+        return cleaned_query
+
+    return f"{cleaned_query}, {cleaned_parent}"

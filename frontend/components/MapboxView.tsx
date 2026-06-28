@@ -184,9 +184,14 @@ function ensureRegionClimateLayers(
   const boundarySource = map.getSource(REGION_BOUNDARY_SOURCE_ID) as
     | mapboxgl.GeoJSONSource
     | undefined;
-  const climateSurface =
-    rasterSurface ?? createRegionClimateSurface(regionalMapping, activeOverlay);
   const boundary = regionBoundary;
+  const climateSurface =
+    createBoundaryClimateSurface(
+      regionalMapping,
+      boundary,
+      activeOverlay,
+      rasterSurface,
+    );
 
   if (climateSource) {
     climateSource.setData(climateSurface);
@@ -248,18 +253,20 @@ function ensureRegionClimateLayers(
       source: REGION_BOUNDARY_SOURCE_ID,
       layout: { visibility: "none" },
       paint: {
-        "line-color": "rgba(165,243,252,0.86)",
+        "line-color": "rgba(236,254,255,0.96)",
         "line-opacity": 0,
         "line-width": [
           "interpolate",
           ["linear"],
           ["zoom"],
           2,
-          1,
+          1.8,
           6,
-          2.2,
+          3.2,
+          12,
+          4.4,
         ],
-        "line-blur": 0.8,
+        "line-blur": 0.2,
       },
     });
   }
@@ -291,6 +298,103 @@ function getClimateSurfaceOpacity(opacity: number): ExpressionSpecification {
   ] as ExpressionSpecification;
 }
 
+function createBoundaryClimateSurface(
+  regionalMapping: RegionalMappingData,
+  boundary: RegionBoundaryFeatureCollection,
+  activeOverlay?: ClimateOverlayRenderModel,
+  rasterSurface?: RegionClimateFeatureCollection | null,
+): RegionClimateFeatureCollection {
+  const fallbackSurface = createRegionClimateSurface(
+    regionalMapping,
+    activeOverlay,
+  );
+  const sourceSurface =
+    rasterSurface && rasterSurface.features.length > 0
+      ? rasterSurface
+      : fallbackSurface;
+  const summary = summarizeClimateSurface(sourceSurface);
+  const activeScore = activeOverlay
+    ? getSummaryScore(summary, activeOverlay.colorProperty)
+    : summary.heat;
+  const representativeCell = sourceSurface.features[0]?.properties;
+
+  if (boundary.features.length === 0) {
+    return fallbackSurface;
+  }
+
+  return {
+    type: "FeatureCollection",
+    features: boundary.features.map((boundaryFeature, index) => ({
+      type: "Feature",
+      properties: {
+        ...summary,
+        id: `${regionalMapping.inputLocation}-smooth-surface-${index}`,
+        alpha: rasterSurface ? 0.34 : 0.28,
+        gridCellId:
+          representativeCell?.gridCellId ??
+          `${regionalMapping.nearestGridCell}:regional-surface`,
+        layerType:
+          representativeCell?.layerType ?? activeOverlay?.id ?? "heat_risk",
+        normalizedScore: activeScore,
+        sampledValue: representativeCell?.sampledValue ?? activeScore,
+        rasterSource:
+          representativeCell?.rasterSource ??
+          (rasterSurface
+            ? "raster_surface_smoothed_to_boundary"
+            : "simulated_boundary_surface"),
+        confidenceLevel:
+          representativeCell?.confidenceLevel ??
+          (rasterSurface ? "Medium-high" : "Medium"),
+      },
+      geometry: boundaryFeature.geometry,
+    })),
+  };
+}
+
+function summarizeClimateSurface(surface: RegionClimateFeatureCollection) {
+  const features = surface.features;
+
+  if (features.length === 0) {
+    return {
+      heat: 58,
+      flood: 42,
+      comfort: 54,
+      livability: 62,
+      water: 46,
+      alpha: 0.4,
+    };
+  }
+
+  const totals = features.reduce(
+    (sum, feature) => ({
+      heat: sum.heat + feature.properties.heat,
+      flood: sum.flood + feature.properties.flood,
+      comfort: sum.comfort + feature.properties.comfort,
+      livability: sum.livability + feature.properties.livability,
+      water: sum.water + feature.properties.water,
+      alpha: sum.alpha + feature.properties.alpha,
+    }),
+    { heat: 0, flood: 0, comfort: 0, livability: 0, water: 0, alpha: 0 },
+  );
+  const count = features.length;
+
+  return {
+    heat: Math.round(totals.heat / count),
+    flood: Math.round(totals.flood / count),
+    comfort: Math.round(totals.comfort / count),
+    livability: Math.round(totals.livability / count),
+    water: Math.round(totals.water / count),
+    alpha: Math.min(0.56, Math.max(0.28, totals.alpha / count)),
+  };
+}
+
+function getSummaryScore(
+  summary: ReturnType<typeof summarizeClimateSurface>,
+  colorProperty: ClimateOverlayRenderModel["colorProperty"],
+) {
+  return summary[colorProperty];
+}
+
 function clipSurfaceToBoundary(
   surface: RegionClimateFeatureCollection,
   boundary: RegionBoundaryFeatureCollection,
@@ -319,6 +423,24 @@ function getRingCenter(ring: number[][]): [number, number] {
   );
 
   return [totals[0] / ring.length, totals[1] / ring.length];
+}
+
+function getBoundaryBounds(
+  boundary: RegionBoundaryFeatureCollection,
+): mapboxgl.LngLatBounds | null {
+  if (boundary.features.length === 0) {
+    return null;
+  }
+
+  const bounds = new mapboxgl.LngLatBounds();
+
+  boundary.features.forEach((feature) => {
+    feature.geometry.coordinates[0]?.forEach(([longitude, latitude]) => {
+      bounds.extend([longitude, latitude]);
+    });
+  });
+
+  return bounds;
 }
 
 function isPointInsideRing(point: [number, number], ring: number[][]) {
@@ -382,8 +504,8 @@ function applyClimateSurface(
   if (!climateOverlayEnabled || !activeOverlay) {
     map.setLayoutProperty(REGION_CLIMATE_LAYER_ID, "visibility", "none");
     map.setPaintProperty(REGION_CLIMATE_LAYER_ID, "fill-opacity", 0);
-    map.setLayoutProperty(REGION_BOUNDARY_LAYER_ID, "visibility", "none");
-    map.setPaintProperty(REGION_BOUNDARY_LAYER_ID, "line-opacity", 0);
+    map.setLayoutProperty(REGION_BOUNDARY_LAYER_ID, "visibility", "visible");
+    map.setPaintProperty(REGION_BOUNDARY_LAYER_ID, "line-opacity", 0.92);
     return;
   }
 
@@ -403,7 +525,7 @@ function applyClimateSurface(
     getClimateSurfaceOpacity(activeOverlay.opacity),
   );
   map.setLayoutProperty(REGION_BOUNDARY_LAYER_ID, "visibility", "visible");
-  map.setPaintProperty(REGION_BOUNDARY_LAYER_ID, "line-opacity", 0.72);
+  map.setPaintProperty(REGION_BOUNDARY_LAYER_ID, "line-opacity", 0.92);
 }
 
 export default function MapboxView({
@@ -452,7 +574,7 @@ export default function MapboxView({
       center: [31, 30],
       zoom: 1.55,
       minZoom: 1.1,
-      maxZoom: 8,
+      maxZoom: 14,
       projection: "globe",
     });
 
@@ -817,7 +939,7 @@ export default function MapboxView({
         onSelectCity(city);
         map.flyTo({
           center: [city.longitude, city.latitude],
-          zoom: Math.max(map.getZoom(), 3.2),
+          zoom: Math.max(map.getZoom(), 9.5),
           duration: 900,
           essential: true,
         });
@@ -873,11 +995,32 @@ export default function MapboxView({
 
     map.flyTo({
       center: [regionalMapping.longitude, regionalMapping.latitude],
-      zoom: Math.max(map.getZoom(), 4),
+      zoom: Math.max(map.getZoom(), 10.5),
       duration: 900,
       essential: true,
     });
   }, [regionalMapping]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+
+    if (!map || !regionBoundary || !regionalMapping) {
+      return;
+    }
+
+    const bounds = getBoundaryBounds(regionBoundary);
+
+    if (!bounds || bounds.isEmpty()) {
+      return;
+    }
+
+    map.fitBounds(bounds, {
+      padding: 96,
+      maxZoom: 11.8,
+      duration: 900,
+      essential: true,
+    });
+  }, [regionBoundary, regionalMapping]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -924,7 +1067,7 @@ export default function MapboxView({
 
     map.flyTo({
       center: [city.longitude, city.latitude],
-      zoom: Math.max(map.getZoom(), 4),
+      zoom: Math.max(map.getZoom(), 10.5),
       duration: 900,
       essential: true,
     });

@@ -146,9 +146,11 @@ const advisorPreferenceChips = [
 
 function DataRow({ label, value }: { label: string; value: string | number }) {
   return (
-    <div className="flex items-center justify-between gap-4 rounded-lg border border-white/10 bg-black/25 px-3 py-2.5">
-      <p className="text-xs text-white/40">{label}</p>
-      <p className="text-right text-sm font-medium text-white/80">{value}</p>
+    <div className="flex min-w-0 items-start justify-between gap-4 rounded-lg border border-white/10 bg-black/25 px-3 py-2.5">
+      <p className="shrink-0 text-xs text-white/40">{label}</p>
+      <p className="min-w-0 break-words text-right text-sm font-medium text-white/80">
+        {value}
+      </p>
     </div>
   );
 }
@@ -847,7 +849,7 @@ export default function IntelligencePanel({
                     <p className="mt-3 text-sm leading-6 text-white/58">
                       {advisorResult.interpretedQuery}
                     </p>
-                    <div className="mt-3 grid grid-cols-2 gap-2">
+                    <div className="mt-3 grid gap-2">
                       <DataRow
                         label="Location"
                         value={advisorResult.extractedInputs.primaryLocation}
@@ -906,6 +908,119 @@ export default function IntelligencePanel({
                       {advisorResult.humanExplanation.humanSummary}
                     </p>
                   </section>
+
+                  <section className="rounded-lg border border-cyan-100/15 bg-cyan-100/[0.045] p-4">
+                    <p className="text-xs font-medium uppercase tracking-[0.24em] text-cyan-100/60">
+                      Evidence Used
+                    </p>
+                    <div className="mt-3 grid gap-2">
+                      <DataRow
+                        label="ML model"
+                        value={
+                          advisorResult.evidenceBundle.modelVersion ??
+                          "Formula fallback"
+                        }
+                      />
+                      <DataRow
+                        label="Scoring"
+                        value={advisorResult.evidenceBundle.scoringSource}
+                      />
+                      <DataRow
+                        label="Data mode"
+                        value={advisorResult.evidenceBundle.climateDataMode}
+                      />
+                      <DataRow
+                        label="Source"
+                        value={advisorResult.evidenceBundle.climateSourceLabel}
+                      />
+                      <DataRow
+                        label="Sample"
+                        value={
+                          advisorResult.evidenceBundle.sampledValue === null
+                            ? "Unavailable"
+                            : `${advisorResult.evidenceBundle.sampledValue.toFixed(2)} ${
+                                advisorResult.evidenceBundle.sampledUnit ?? ""
+                              }`
+                        }
+                      />
+                      <DataRow
+                        label="Grid cell"
+                        value={
+                          advisorResult.evidenceBundle.gridCellId ?? "Not sampled"
+                        }
+                      />
+                    </div>
+                    <p className="mt-3 rounded-lg border border-white/10 bg-black/25 px-3 py-2 text-sm leading-5 text-white/58">
+                      {advisorResult.evidenceBundle.explanationGrounding}
+                    </p>
+                    {advisorResult.evidenceBundle.modelInputsUsed.length > 0 ? (
+                      <p className="mt-2 text-xs leading-5 text-white/42">
+                        Inputs:{" "}
+                        {advisorResult.evidenceBundle.modelInputsUsed
+                          .slice(0, 8)
+                          .join(" / ")}
+                      </p>
+                    ) : null}
+                    <div className="mt-3 grid gap-2 border-t border-white/10 pt-3">
+                      <DataRow
+                        label="Geocoder"
+                        value={advisorResult.systemAudit.geocoderProvider ?? "unknown"}
+                      />
+                      <DataRow
+                        label="RAG mode"
+                        value={`${advisorResult.systemAudit.ragRetrievalMode} / ${advisorResult.systemAudit.ragChunkCount} chunks`}
+                      />
+                      <DataRow
+                        label="Recommendation"
+                        value={advisorResult.systemAudit.recommendationModel}
+                      />
+                    </div>
+                    {advisorResult.systemAudit.fallbackNotes.length > 0 ? (
+                      <p className="mt-2 text-xs leading-5 text-amber-100/55">
+                        Fallbacks:{" "}
+                        {advisorResult.systemAudit.fallbackNotes.join(" ")}
+                      </p>
+                    ) : null}
+                  </section>
+
+                  {advisorResult.retrievedKnowledge.length > 0 ? (
+                    <section className="rounded-lg border border-sky-200/15 bg-sky-200/[0.04] p-4">
+                      <p className="text-xs font-medium uppercase tracking-[0.24em] text-sky-100/60">
+                        Research Context
+                      </p>
+                      {advisorResult.ragGroundingSummary ? (
+                        <p className="mt-3 text-sm leading-6 text-white/55">
+                          {advisorResult.ragGroundingSummary}
+                        </p>
+                      ) : null}
+                      <div className="mt-3 space-y-2">
+                        {advisorResult.retrievedKnowledge
+                          .slice(0, 3)
+                          .map((chunk) => (
+                            <article
+                              key={chunk.chunkId}
+                              className="rounded-lg border border-white/10 bg-black/25 px-3 py-2.5"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <p className="text-sm font-medium text-white/80">
+                                  {chunk.title}
+                                </p>
+                                <span className="shrink-0 text-xs text-cyan-50/55">
+                                  {chunk.relevanceScore.toFixed(2)}
+                                </span>
+                              </div>
+                              <p className="mt-2 text-xs leading-5 text-white/48">
+                                {chunk.text}
+                              </p>
+                              <p className="mt-2 text-xs text-white/35">
+                                {chunk.source.publisher}
+                                {chunk.source.year ? ` / ${chunk.source.year}` : ""}
+                              </p>
+                            </article>
+                          ))}
+                      </div>
+                    </section>
+                  ) : null}
 
                   <section className="rounded-lg border border-red-200/15 bg-red-200/[0.045] p-4">
                     <p className="text-xs font-medium uppercase tracking-[0.24em] text-red-100/60">

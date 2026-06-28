@@ -10,6 +10,13 @@ KNOWN_PLACE_NAMES = [
     "Mumbai",
     "Bangalore",
     "Bengaluru",
+    "Chennai",
+    "Hyderabad",
+    "Delhi",
+    "New Delhi",
+    "Kolkata",
+    "Ahmedabad",
+    "Jaipur",
     "Istanbul",
     "Madrid",
     "Koramangala",
@@ -17,6 +24,13 @@ KNOWN_PLACE_NAMES = [
     "Kadikoy",
     "Chelsea",
     "Brooklyn",
+    "London",
+    "Toronto",
+    "New York",
+    "Varanasi",
+    "Gurgaon",
+    "Gurugram",
+    "Noida",
 ]
 
 PREFERENCE_KEYWORDS = {
@@ -101,7 +115,11 @@ def extract_locations(query_text: str) -> list[str]:
 
     for place in KNOWN_PLACE_NAMES:
         if re.search(rf"\b{re.escape(place)}\b", query_text, flags=re.IGNORECASE):
-            normalized = "Bangalore" if place == "Bengaluru" else place
+            normalized = {
+                "Bengaluru": "Bangalore",
+                "New Delhi": "Delhi",
+                "Gurugram": "Gurgaon",
+            }.get(place, place)
 
             if normalized not in locations:
                 locations.append(normalized)

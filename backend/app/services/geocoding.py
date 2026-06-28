@@ -24,8 +24,8 @@ NOMINATIM_USER_AGENT = os.getenv(
 )
 
 
-def geocode_location(query: str) -> LocationResult | None:
-    cleaned_query = query.strip()
+def geocode_location(query: str, parent_location: str | None = None) -> LocationResult | None:
+    cleaned_query = build_geocoder_query(query, parent_location)
 
     if not cleaned_query:
         return None
@@ -37,6 +37,22 @@ def geocode_location(query: str) -> LocationResult | None:
             return mapbox_result
 
     return geocode_with_nominatim(cleaned_query)
+
+
+def build_geocoder_query(query: str, parent_location: str | None = None) -> str:
+    cleaned_query = query.strip()
+    cleaned_parent = (parent_location or "").strip()
+
+    if not cleaned_query:
+        return cleaned_parent
+
+    if not cleaned_parent:
+        return cleaned_query
+
+    if cleaned_parent.lower() in cleaned_query.lower():
+        return cleaned_query
+
+    return f"{cleaned_query}, {cleaned_parent}"
 
 
 def geocode_with_mapbox(query: str) -> LocationResult | None:

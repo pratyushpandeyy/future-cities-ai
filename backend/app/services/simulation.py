@@ -228,6 +228,10 @@ def score_scenario(payload: ScenarioScoreRequest | ScenarioInput) -> ScenarioSco
 
     spatial = resolve_spatial_context(payload.location)
     location = spatial.resolved_location
+    climate_scenario = select_climate_scenario(
+        warming_level=payload.warmingLevel,
+        requested_scenario=payload.climateScenario,
+    )
     feature_vector = build_climate_feature_vector(
         FeatureBuildRequest(
             query=payload.location,
@@ -235,7 +239,7 @@ def score_scenario(payload: ScenarioScoreRequest | ScenarioInput) -> ScenarioSco
             warming_level=payload.warmingLevel,
             season=payload.season,
             time_of_day=payload.timeOfDay,
-            climate_scenario=payload.climateScenario,
+            climate_scenario=climate_scenario,
             climate_model=payload.climateModel,
         ),
         spatial=spatial,
@@ -246,7 +250,7 @@ def score_scenario(payload: ScenarioScoreRequest | ScenarioInput) -> ScenarioSco
         longitude=location.longitude,
         variable="tmax",
         year=payload.year,
-        scenario=payload.climateScenario,
+        scenario=climate_scenario,
         month=representative_month(payload.season, location.latitude),
         model=payload.climateModel,
         allow_demo_fallback=True,
@@ -259,6 +263,24 @@ def score_scenario(payload: ScenarioScoreRequest | ScenarioInput) -> ScenarioSco
         model_prediction=model_prediction,
         raster_sample=raster_sample,
     )
+
+
+def select_climate_scenario(
+    *,
+    warming_level: float,
+    requested_scenario: str | None,
+) -> str:
+    if requested_scenario and requested_scenario != "ssp245":
+        return requested_scenario
+
+    if warming_level < 2.0:
+        return "ssp126"
+    if warming_level < 2.8:
+        return "ssp245"
+    if warming_level < 3.4:
+        return "ssp370"
+
+    return "ssp585"
 
 
 def compare_scenarios(payload: ScenarioCompareRequest) -> ScenarioCompareResponse:

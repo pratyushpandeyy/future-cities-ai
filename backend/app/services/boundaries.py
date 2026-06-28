@@ -13,6 +13,10 @@ from app.models.schemas import (
     LocationResult,
     RegionBoundaryResponse,
 )
+from app.services.boundary_resolution import (
+    boundary_search_hierarchy,
+    match_boundary_candidates,
+)
 from app.services.simulation import resolve_location
 
 
@@ -38,6 +42,22 @@ BOUNDARY_ALIASES = {
     "madrid": "community_of_madrid.geojson",
     "community of madrid": "community_of_madrid.geojson",
 }
+
+BOUNDARY_NAME_PROPERTY_KEYS = [
+    "name",
+    "shapeName",
+    "shapeISO",
+    "shapeGroup",
+    "NAME",
+    "NAME_0",
+    "NAME_1",
+    "NAME_2",
+    "NAME_3",
+    "VARNAME_1",
+    "VARNAME_2",
+    "NL_NAME_1",
+    "NL_NAME_2",
+]
 
 
 def get_region_boundary(
@@ -108,20 +128,15 @@ def match_database_boundary(
     location: str,
     location_result: LocationResult,
 ) -> tuple[AdministrativeBoundary | None, str | None]:
-    searchable_text = build_searchable_text(location, location_result)
+    candidates = boundary_search_hierarchy(location, location_result)
     boundaries = session.query(AdministrativeBoundary).all()
 
-    for boundary in boundaries:
-        boundary_terms = [
-            ("name", boundary.name),
-            *[("alias", alias) for alias in boundary.aliases],
-        ]
+    for candidate in candidates:
+        for boundary in boundaries:
+            match = match_boundary_candidates(boundary, [candidate])
 
-        for term_type, term in boundary_terms:
-            normalized_term = term.strip().lower()
-
-            if normalized_term and normalized_term in searchable_text:
-                return boundary, f"{term_type} match: {term}"
+            if match:
+                return boundary, f"database hierarchy {match[1]}"
 
     return None, "no database boundary matched search metadata"
 
@@ -136,7 +151,81 @@ def find_boundary_file(
         if alias in searchable_text:
             return boundary_file, f"local GeoJSON alias match: {alias}"
 
+    catalog_match = find_catalog_boundary_file(searchable_text)
+
+    if catalog_match:
+        boundary_file, matched_name = catalog_match
+        return boundary_file, f"local GeoJSON catalog match: {matched_name}"
+
     return None, "no local GeoJSON boundary matched search metadata"
+
+
+def find_catalog_boundary_file(searchable_text: str) -> tuple[str, str] | None:
+    for boundary_file, names in local_boundary_catalog().items():
+        for name in sorted(names, key=len, reverse=True):
+            if name and name in searchable_text:
+                return boundary_file, name
+
+    return None
+
+
+@lru_cache(maxsize=1)
+def local_boundary_catalog() -> dict[str, list[str]]:
+    if not BOUNDARY_DIR.exists():
+        return {}
+
+    catalog = {}
+
+    for boundary_path in BOUNDARY_DIR.glob("*.geojson"):
+        try:
+            geojson = json.loads(boundary_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+
+        names = extract_boundary_search_names(geojson)
+        filename_name = boundary_path.stem.replace("_", " ").replace("-", " ").lower()
+        names.append(filename_name)
+        catalog[boundary_path.name] = sorted(set(filter(None, names)))
+
+    return catalog
+
+
+def extract_boundary_search_names(geojson: dict[str, object]) -> list[str]:
+    features = geojson.get("features")
+
+    if not isinstance(features, list):
+        return []
+
+    names = []
+
+    for feature in features[:20]:
+        if not isinstance(feature, dict):
+            continue
+
+        properties = feature.get("properties")
+
+        if not isinstance(properties, dict):
+            continue
+
+        for key in BOUNDARY_NAME_PROPERTY_KEYS:
+            raw_value = properties.get(key)
+
+            if isinstance(raw_value, str):
+                names.extend(normalize_boundary_names(raw_value))
+
+    return names
+
+
+def normalize_boundary_names(value: str) -> list[str]:
+    names = []
+
+    for item in value.replace("|", ",").replace(";", ",").split(","):
+        normalized = item.strip().lower()
+
+        if normalized:
+            names.append(normalized)
+
+    return names
 
 
 def build_searchable_text(location: str, location_result: LocationResult) -> str:
@@ -214,9 +303,22 @@ def extract_boundary_name(geojson: dict[str, object]) -> str | None:
     if not isinstance(properties, dict):
         return None
 
-    name = properties.get("name")
+    name = first_boundary_property(properties, BOUNDARY_NAME_PROPERTY_KEYS)
 
     return str(name) if name else None
+
+
+def first_boundary_property(
+    properties: dict[str, object],
+    keys: list[str],
+) -> object | None:
+    for key in keys:
+        value = properties.get(key)
+
+        if value:
+            return value
+
+    return None
 
 
 def infer_boundary_climate_region(boundary_file: str) -> str:

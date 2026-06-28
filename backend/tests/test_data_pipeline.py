@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app.main import app
 from app.models.schemas import (
+    ClimateFeatureHarvestResponse,
     EnvironmentalContext,
     FeatureBuildRequest,
     LocationResult,
@@ -133,6 +134,34 @@ class DataPipelineRouteTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertGreaterEqual(len(response.json()), 5)
+
+    @patch("app.api.routes.data_pipeline.harvest_climate_training_features")
+    def test_harvest_endpoint_returns_training_dataset_metadata(self, harvest) -> None:
+        harvest.return_value = ClimateFeatureHarvestResponse(
+            output_path="backend/data/models/climate_training_features_v2.json",
+            row_count=1,
+            location_count=1,
+            feature_schema_version="climate_features_v1",
+            training_source="harvested_feature_vectors_with_expert_rule_targets",
+            fallback_row_count=0,
+            real_data_row_count=1,
+            message="Harvested climate feature dataset for ML training.",
+        )
+        client = TestClient(app)
+
+        response = client.post(
+            "/api/features/harvest",
+            json={
+                "locations": ["Whitefield"],
+                "years": [2050],
+                "warming_levels": [2.7],
+                "seasons": ["Summer"],
+                "overwrite": True,
+            },
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["row_count"], 1)
 
 
 def build_climate_feature_vector_response():

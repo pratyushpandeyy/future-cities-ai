@@ -8,6 +8,7 @@ from app.api.routes.data_pipeline import router as data_pipeline_router
 from app.api.routes.explain import router as explain_router
 from app.api.routes.environment import router as environment_router
 from app.api.routes.health import router as health_router
+from app.api.routes.rag import router as rag_router
 from app.api.routes.region import router as region_router
 from app.api.routes.recommendations import router as recommendations_router
 from app.api.routes.saved_scenarios import router as saved_scenarios_router
@@ -41,3 +42,4 @@ app.include_router(environment_router)
 app.include_router(explain_router)
 app.include_router(recommendations_router)
 app.include_router(saved_scenarios_router)
+app.include_router(rag_router)

@@ -36,6 +36,11 @@ def template_explanation(payload: ExplanationRequest) -> ExplanationResponse:
             f"The dominant chain is: "
             f"{payload.interaction_summary.dominant_interaction_chain}"
         )
+    rag_phrase = ""
+
+    if payload.retrieved_knowledge:
+        titles = ", ".join(chunk.title for chunk in payload.retrieved_knowledge[:2])
+        rag_phrase = f" Research context retrieved for this answer includes: {titles}."
 
     heat_phrase = risk_phrase(payload.heat_risk, "heat")
     flood_phrase = risk_phrase(payload.flood_risk, "flood")
@@ -52,6 +57,7 @@ def template_explanation(payload: ExplanationRequest) -> ExplanationResponse:
             f"{payload.outdoor_comfort.lower()} outdoor comfort. "
             f"The main driver is {payload.dominant_risk_driver}.{cell_phrase}"
             f"{interaction_phrase}"
+            f"{rag_phrase}"
         ),
         commute_impact=(
             f"Commutes are most sensitive to {payload.dominant_risk_driver}; "
@@ -180,14 +186,26 @@ def confidence_note_for(payload: ExplanationRequest) -> str:
             f"Confidence is {payload.selected_grid_cell.confidence_level.lower()} "
             f"for the selected grid cell because the explanation uses computed scores "
             f"and {payload.selected_grid_cell.fallback_source_used}."
+            f"{rag_confidence_phrase(payload)}"
             f"{interaction_note}"
         )
 
     return (
         "Confidence is medium because the explanation uses deterministic backend "
         "scores and regional assumptions, without a selected grid-cell inspection."
+        f"{rag_confidence_phrase(payload)}"
         f"{interaction_note}"
     )
+
+
+def rag_confidence_phrase(payload: ExplanationRequest) -> str:
+    if not payload.retrieved_knowledge:
+        return ""
+
+    if payload.rag_grounding_summary:
+        return f" {payload.rag_grounding_summary}"
+
+    return " Local RAG evidence was retrieved for qualitative grounding."
 
 
 def interaction_commute_phrase(payload: ExplanationRequest) -> str:

@@ -221,6 +221,7 @@ export interface RecommendedRegion {
   dominantFutureRisks: string[];
   expectedLivabilityTrajectory: string;
   majorTradeoffs: string[];
+  rankingBreakdown: Record<string, number>;
   explanation: string;
 }
 
@@ -266,12 +267,59 @@ export interface AdvisorResult {
   interpretedQuery: string;
   extractedInputs: AdvisorExtractedInputs;
   primaryLocationScore: ScenarioScoreResult;
+  evidenceBundle: AdvisorEvidenceBundle;
+  systemAudit: AdvisorSystemAudit;
+  retrievedKnowledge: KnowledgeChunk[];
+  ragGroundingSummary: string | null;
   recommendationSummary: string;
   keyRisks: string[];
   suggestedComparisonLocations: RecommendedRegion[];
   fallbackLocations: RecommendedRegion[];
   humanExplanation: AIExplanation;
   confidenceNote: string;
+}
+
+export interface AdvisorSystemAudit {
+  geocoderProvider: string | null;
+  climateDataMode: string;
+  mlModelVersion: string | null;
+  mlScoringSource: string;
+  ragRetrievalMode: string;
+  ragChunkCount: number;
+  recommendationModel: string;
+  fallbackNotes: string[];
+}
+
+export interface KnowledgeSource {
+  title: string;
+  publisher: string;
+  year: number | null;
+  url: string | null;
+}
+
+export interface KnowledgeChunk {
+  chunkId: string;
+  title: string;
+  text: string;
+  source: KnowledgeSource;
+  tags: string[];
+  relevanceScore: number;
+}
+
+export interface AdvisorEvidenceBundle {
+  modelVersion: string | null;
+  scoringSource: string;
+  modelConfidence: string | null;
+  modelInputsUsed: string[];
+  climateDataMode: string;
+  climateSourceLabel: string;
+  climateSourceConfidence: string;
+  sampledVariable: string | null;
+  sampledValue: number | null;
+  sampledUnit: string | null;
+  gridCellId: string | null;
+  boundarySource: string | null;
+  explanationGrounding: string;
 }
 
 export interface AdvisorQueryPayload {
@@ -346,6 +394,7 @@ export interface ComparisonMetrics {
 
 export interface SearchLocationPayload {
   query: string;
+  parentLocation?: string;
   fallbackCenter: [number, number];
 }
 
@@ -353,6 +402,20 @@ export interface SearchLocationResult {
   kind: "known" | "regional";
   city: MapCityNodeData;
   regionalMapping: RegionalMappingData;
+}
+
+export interface LocationSuggestion {
+  id: string;
+  label: string;
+  hierarchyLabel: string | null;
+  locationName: string;
+  region: string;
+  locality: string | null;
+  district: string | null;
+  city: string | null;
+  country: string | null;
+  placeType: string | null;
+  geocoderProvider: string | null;
 }
 
 export interface HumanImpactExplanationPayload {
@@ -445,7 +508,12 @@ interface ApiComparisonResult {
 
 interface ApiRegionBoundaryResult {
   location: ApiLocationResult;
-  boundary_source: "database" | "real_geojson" | "simulated_fallback" | "simulated";
+  boundary_source:
+    | "database"
+    | "real_geojson"
+    | "online_osm"
+    | "simulated_fallback"
+    | "simulated";
   boundary_name?: string | null;
   boundary_match_reason?: string | null;
   climate_region_type?: string | null;
@@ -561,6 +629,7 @@ interface ApiRecommendedRegion {
   dominant_future_risks: string[];
   expected_livability_trajectory: string;
   major_tradeoffs: string[];
+  ranking_breakdown: Record<string, number>;
   explanation: string;
 }
 
@@ -601,6 +670,45 @@ interface ApiAdvisorResult {
   interpreted_query: string;
   extracted_inputs: ApiAdvisorExtractedInputs;
   primary_location_score: ApiScenarioScoreResult;
+  evidence_bundle: {
+    model_version: string | null;
+    scoring_source: string;
+    model_confidence: string | null;
+    model_inputs_used: string[];
+    climate_data_mode: string;
+    climate_source_label: string;
+    climate_source_confidence: string;
+    sampled_variable: string | null;
+    sampled_value: number | null;
+    sampled_unit: string | null;
+    grid_cell_id: string | null;
+    boundary_source: string | null;
+    explanation_grounding: string;
+  };
+  system_audit: {
+    geocoder_provider: string | null;
+    climate_data_mode: string;
+    ml_model_version: string | null;
+    ml_scoring_source: string;
+    rag_retrieval_mode: string;
+    rag_chunk_count: number;
+    recommendation_model: string;
+    fallback_notes: string[];
+  };
+  retrieved_knowledge: {
+    chunk_id: string;
+    title: string;
+    text: string;
+    source: {
+      title: string;
+      publisher: string;
+      year: number | null;
+      url: string | null;
+    };
+    tags: string[];
+    relevance_score: number;
+  }[];
+  rag_grounding_summary: string | null;
   recommendation_summary: string;
   key_risks: string[];
   suggested_comparison_locations: ApiRecommendedRegion[];
@@ -747,8 +855,14 @@ function apiScenarioToScore(
 
 export async function searchLocation({
   query,
+  parentLocation,
 }: SearchLocationPayload): Promise<SearchLocationResult> {
   const params = new URLSearchParams({ query: query.trim() || "Unknown" });
+
+  if (parentLocation?.trim()) {
+    params.set("parent_location", parentLocation.trim());
+  }
+
   const location = await requestJson<ApiLocationResult>(
     `/api/search?${params.toString()}`,
   );
@@ -758,6 +872,42 @@ export async function searchLocation({
     city: apiLocationToCity(location),
     regionalMapping: apiLocationToRegionalMapping(location),
   };
+}
+
+export async function getLocationSuggestions(
+  query: string,
+  parentLocation?: string,
+): Promise<LocationSuggestion[]> {
+  if (query.trim().length < 2) {
+    return [];
+  }
+
+  const params = new URLSearchParams({
+    query: query.trim(),
+    limit: "6",
+  });
+
+  if (parentLocation?.trim()) {
+    params.set("parent_location", parentLocation.trim());
+  }
+
+  const locations = await requestJson<ApiLocationResult[]>(
+    `/api/search/suggestions?${params.toString()}`,
+  );
+
+  return locations.map((location) => ({
+    id: location.location_id,
+    label: location.location_name,
+    hierarchyLabel: location.hierarchy_label ?? null,
+    locationName: location.location_name,
+    region: location.region,
+    locality: location.locality ?? null,
+    district: location.district ?? null,
+    city: location.city ?? null,
+    country: location.country ?? null,
+    placeType: location.place_type ?? null,
+    geocoderProvider: location.geocoder_provider ?? null,
+  }));
 }
 
 export async function getScenarioScore({
@@ -941,7 +1091,9 @@ export async function compareScenarios({
 export async function getRegionBoundary(
   location: RegionalMappingData,
 ): Promise<RegionBoundaryFeatureCollection> {
-  const params = new URLSearchParams({ location: location.inputLocation });
+  const params = new URLSearchParams({
+    location: getBoundaryLookupLocation(location),
+  });
   const result = await requestJson<ApiRegionBoundaryResult>(
     `/api/region-boundary?${params.toString()}`,
   );
@@ -993,6 +1145,28 @@ export async function getRegionBoundary(
       },
     ],
   };
+}
+
+function getBoundaryLookupLocation(location: RegionalMappingData): string {
+  const placeType = location.placeType?.toLowerCase() ?? "";
+
+  if (["poi", "address"].includes(placeType)) {
+    return (
+      location.city ??
+      location.district ??
+      location.mappedRegion ??
+      location.hierarchyLabel ??
+      location.inputLocation
+    );
+  }
+
+  return (
+    location.city ??
+    location.locality ??
+    location.district ??
+    location.mappedRegion ??
+    location.inputLocation
+  );
 }
 
 export async function getClimateSurface({
@@ -1236,6 +1410,46 @@ export async function queryClimateAdvisor({
       apiLocationToCity(result.primary_location_score.location),
       result.primary_location_score,
     ),
+    evidenceBundle: {
+      modelVersion: result.evidence_bundle.model_version,
+      scoringSource: result.evidence_bundle.scoring_source,
+      modelConfidence: result.evidence_bundle.model_confidence,
+      modelInputsUsed: result.evidence_bundle.model_inputs_used,
+      climateDataMode: result.evidence_bundle.climate_data_mode,
+      climateSourceLabel: result.evidence_bundle.climate_source_label,
+      climateSourceConfidence:
+        result.evidence_bundle.climate_source_confidence,
+      sampledVariable: result.evidence_bundle.sampled_variable,
+      sampledValue: result.evidence_bundle.sampled_value,
+      sampledUnit: result.evidence_bundle.sampled_unit,
+      gridCellId: result.evidence_bundle.grid_cell_id,
+      boundarySource: result.evidence_bundle.boundary_source,
+      explanationGrounding: result.evidence_bundle.explanation_grounding,
+    },
+    systemAudit: {
+      geocoderProvider: result.system_audit.geocoder_provider,
+      climateDataMode: result.system_audit.climate_data_mode,
+      mlModelVersion: result.system_audit.ml_model_version,
+      mlScoringSource: result.system_audit.ml_scoring_source,
+      ragRetrievalMode: result.system_audit.rag_retrieval_mode,
+      ragChunkCount: result.system_audit.rag_chunk_count,
+      recommendationModel: result.system_audit.recommendation_model,
+      fallbackNotes: result.system_audit.fallback_notes,
+    },
+    retrievedKnowledge: result.retrieved_knowledge.map((chunk) => ({
+      chunkId: chunk.chunk_id,
+      title: chunk.title,
+      text: chunk.text,
+      source: {
+        title: chunk.source.title,
+        publisher: chunk.source.publisher,
+        year: chunk.source.year,
+        url: chunk.source.url,
+      },
+      tags: chunk.tags,
+      relevanceScore: chunk.relevance_score,
+    })),
+    ragGroundingSummary: result.rag_grounding_summary,
     recommendationSummary: result.recommendation_summary,
     keyRisks: result.key_risks,
     suggestedComparisonLocations:
@@ -1265,6 +1479,7 @@ function apiRegionToClient(region: ApiRecommendedRegion): RecommendedRegion {
     dominantFutureRisks: region.dominant_future_risks,
     expectedLivabilityTrajectory: region.expected_livability_trajectory,
     majorTradeoffs: region.major_tradeoffs,
+    rankingBreakdown: region.ranking_breakdown,
     explanation: region.explanation,
   };
 }

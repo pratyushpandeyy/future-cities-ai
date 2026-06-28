@@ -3,6 +3,8 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from app.models.schemas import ClimateFeatureHarvestRequest
+from app.services.feature_harvesting import harvest_climate_training_features
 from app.models.schemas import ClimateFeatureVector, EngineeredFeature
 from app.services.ml_inference import predict_climate_adjustments
 from app.services.ml_training import (
@@ -21,7 +23,7 @@ class ClimateModelTrainingTests(unittest.TestCase):
 
             self.assertTrue(path.exists())
             self.assertTrue(result.trained)
-            self.assertEqual(status.model_version, "trained_linear_adjustment_v1")
+            self.assertEqual(status.model_version, "trained_linear_adjustment_v2")
             self.assertGreater(status.training_row_count or 0, 0)
             self.assertIn("heat_adjustment_mae", status.metrics)
 
@@ -62,13 +64,72 @@ class ClimateModelTrainingTests(unittest.TestCase):
 
             self.assertEqual(
                 prediction.model_version,
-                "trained_linear_adjustment_v1",
+                "trained_linear_adjustment_v2",
             )
             self.assertEqual(
                 prediction.model_type,
                 "trained_linear_regression_artifact",
             )
             self.assertFalse(prediction.fallback_used)
+
+    @patch("app.services.feature_harvesting.build_climate_feature_vector")
+    def test_harvested_features_can_train_model(self, build_features) -> None:
+        build_features.return_value = climate_feature_vector_fixture()
+
+        with tempfile.TemporaryDirectory() as directory:
+            feature_path = Path(directory) / "features.json"
+            model_path = Path(directory) / "model.json"
+            harvest = harvest_climate_training_features(
+                ClimateFeatureHarvestRequest(
+                    locations=["Whitefield"],
+                    years=[2050],
+                    warming_levels=[2.7],
+                    seasons=["Summer"],
+                    output_path=str(feature_path),
+                    overwrite=True,
+                ),
+            )
+            result = train_climate_adjustment_model(
+                model_path,
+                training_data_path=feature_path,
+                overwrite=True,
+            )
+
+            self.assertEqual(harvest.row_count, 1)
+            self.assertTrue(feature_path.exists())
+            self.assertIn("raster_anchored_proxy_labels_v1", result.training_source)
+            self.assertEqual(result.training_row_count, 1)
+            self.assertTrue(model_path.exists())
+
+
+def climate_feature_vector_fixture() -> ClimateFeatureVector:
+    return ClimateFeatureVector(
+        input_query="Whitefield",
+        resolved_name="Whitefield",
+        latitude=12.9698,
+        longitude=77.7499,
+        resolution_level="locality",
+        year=2050,
+        warming_level=2.7,
+        season="Summer",
+        time_of_day="Afternoon",
+        climate_region_type="highland",
+        features={
+            name: EngineeredFeature(
+                value=0.5 if name not in {"relative_humidity_pct"} else 62,
+                unit="test",
+                source="test",
+                is_fallback=False,
+                confidence="high",
+            )
+            for name in FEATURE_NAMES
+        },
+        available_dataset_keys=[],
+        fallback_feature_names=[],
+        data_completeness=1.0,
+        confidence="high",
+        feature_schema_version="climate_features_v1",
+    )
 
 
 if __name__ == "__main__":

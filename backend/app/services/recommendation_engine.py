@@ -1,4 +1,6 @@
 from app.models.schemas import (
+    CandidateScreenRequest,
+    CandidateScreenResponse,
     ClimateInteractionRequest,
     RecommendationRequest,
     RecommendationResponse,
@@ -6,9 +8,9 @@ from app.models.schemas import (
     RegionComparisonProjection,
     ScenarioScoreRequest,
 )
-from app.services.climate_engine import compute_scenario_score, is_coastal
 from app.services.climate_interaction_engine import compute_composite_risk
 from app.services.simulation import resolve_location
+from app.services.simulation import score_scenario
 
 
 RECOMMENDATION_MODEL_VERSION = "future_habitability_recommendations_v1"
@@ -35,6 +37,42 @@ CANDIDATE_REGIONS: list[CandidateRegion] = [
         "tags": ["highland", "urban", "non_coastal", "tech"],
     },
     {
+        "location": "Chennai",
+        "region": "Tamil Nadu coastal urban corridor",
+        "profile": "tropical_humid_coastal",
+        "tags": ["coastal", "humid", "urban", "heat"],
+    },
+    {
+        "location": "Hyderabad",
+        "region": "Telangana inland plateau region",
+        "profile": "semi_arid_highland",
+        "tags": ["highland", "urban", "non_coastal", "tech", "dry"],
+    },
+    {
+        "location": "Delhi",
+        "region": "National Capital Region",
+        "profile": "continental_dense",
+        "tags": ["dense", "urban", "non_coastal", "air_quality"],
+    },
+    {
+        "location": "Kolkata",
+        "region": "Lower Ganges delta urban region",
+        "profile": "tropical_humid_delta",
+        "tags": ["coastal", "humid", "flood", "dense"],
+    },
+    {
+        "location": "Ahmedabad",
+        "region": "Gujarat semi-arid urban region",
+        "profile": "arid_urban",
+        "tags": ["dry", "urban", "heat", "non_coastal"],
+    },
+    {
+        "location": "Jaipur",
+        "region": "Rajasthan arid urban region",
+        "profile": "arid",
+        "tags": ["dry", "heat", "non_coastal", "urban"],
+    },
+    {
         "location": "Madrid",
         "region": "Community of Madrid",
         "profile": "mediterranean",
@@ -51,6 +89,18 @@ CANDIDATE_REGIONS: list[CandidateRegion] = [
         "region": "Maharashtra coastal region",
         "profile": "tropical_humid_coastal",
         "tags": ["coastal", "dense", "humid", "megacity"],
+    },
+    {
+        "location": "London",
+        "region": "Greater London temperate urban region",
+        "profile": "temperate_oceanic_dense",
+        "tags": ["temperate", "urban", "dense", "culture"],
+    },
+    {
+        "location": "Toronto",
+        "region": "Great Lakes temperate urban region",
+        "profile": "continental_temperate",
+        "tags": ["temperate", "urban", "non_coastal", "water"],
     },
 ]
 
@@ -97,6 +147,52 @@ def generate_recommendations(
     )
 
 
+def screen_candidate_locations(
+    payload: CandidateScreenRequest,
+) -> CandidateScreenResponse:
+    current_projection = evaluate_projection(
+        location_name=payload.current_location,
+        payload=payload,
+    )
+    candidate_names = payload.candidate_locations or [
+        str(candidate["location"]) for candidate in CANDIDATE_REGIONS
+    ]
+    ranked_candidates = sorted(
+        [
+            evaluate_candidate_location(location_name, payload)
+            for location_name in unique_locations(candidate_names, payload.current_location)
+        ],
+        key=lambda candidate: candidate.suitability_score,
+        reverse=True,
+    )
+
+    return CandidateScreenResponse(
+        current_location=current_projection,
+        ranked_candidates=ranked_candidates,
+        recommendation_model=RECOMMENDATION_MODEL_VERSION,
+        screening_note=(
+            "Candidate screen uses the same geocoding, raster sampling, feature "
+            "engineering, ML adjustment, and interaction scoring path as the advisor."
+        ),
+    )
+
+
+def unique_locations(locations: list[str], current_location: str) -> list[str]:
+    seen = {current_location.strip().lower()}
+    unique = []
+
+    for location in locations:
+        normalized = location.strip().lower()
+
+        if not normalized or normalized in seen:
+            continue
+
+        seen.add(normalized)
+        unique.append(location)
+
+    return unique
+
+
 def evaluate_candidate(
     candidate: CandidateRegion,
     payload: RecommendationRequest,
@@ -109,14 +205,25 @@ def evaluate_candidate(
     risk_penalty = user_risk_penalty(payload, projection)
     preference_bonus = preference_bonus_for(tags, payload)
     remote_work_bonus = round(payload.remote_work_flexibility * 0.08)
+    livability_component = projection.livability_score * 0.36
+    resilience_component = projection.resilience_score * 0.32
+    base_component = 34
     suitability = clamp_score(
-        34
-        + projection.livability_score * 0.36
-        + projection.resilience_score * 0.32
+        base_component
+        + livability_component
+        + resilience_component
         + preference_bonus
         + remote_work_bonus
         - risk_penalty,
     )
+    ranking_breakdown = {
+        "base_component": round(base_component, 2),
+        "livability_component": round(livability_component, 2),
+        "resilience_component": round(resilience_component, 2),
+        "preference_bonus": round(preference_bonus, 2),
+        "remote_work_bonus": round(remote_work_bonus, 2),
+        "risk_penalty": round(risk_penalty, 2),
+    }
 
     return RecommendedRegion(
         region_name=str(candidate["region"]),
@@ -131,13 +238,76 @@ def evaluate_candidate(
             projection.livability_score,
         ),
         major_tradeoffs=tradeoffs_for(tags, payload, projection),
+        ranking_breakdown=ranking_breakdown,
         explanation=(
             f"{candidate['region']} scores {suitability}/100 because it balances "
-            f"{projection.resilience_score}/100 resilience with "
+            f"{projection.livability_score}/100 livability, "
+            f"{projection.resilience_score}/100 resilience, "
             f"{projection.heat_risk.lower()} heat risk and "
-            f"{projection.flood_risk.lower()} flood risk."
+            f"{projection.flood_risk.lower()} flood risk. User constraints apply "
+            f"a {round(risk_penalty, 1)} point risk penalty and a "
+            f"{round(preference_bonus + remote_work_bonus, 1)} point preference bonus."
         ),
     )
+
+
+def evaluate_candidate_location(
+    location_name: str,
+    payload: RecommendationRequest,
+) -> RecommendedRegion:
+    known_candidate = next(
+        (
+            candidate
+            for candidate in CANDIDATE_REGIONS
+            if str(candidate["location"]).lower() == location_name.lower()
+        ),
+        None,
+    )
+
+    if known_candidate:
+        return evaluate_candidate(known_candidate, payload)
+
+    location = resolve_location(location_name)
+    tags = infer_candidate_tags(location)
+    candidate: CandidateRegion = {
+        "location": location.location_name,
+        "region": location.region,
+        "profile": location.climate_zone,
+        "tags": tags,
+    }
+
+    return evaluate_candidate(candidate, payload)
+
+
+def infer_candidate_tags(location) -> list[str]:
+    text = " ".join(
+        filter(
+            None,
+            [
+                location.location_name,
+                location.region,
+                location.climate_zone,
+                location.country,
+                location.place_type,
+            ],
+        ),
+    ).lower()
+    tags = ["urban"]
+
+    if any(term in text for term in ["coastal", "delta", "mumbai", "chennai", "kolkata"]):
+        tags.append("coastal")
+    else:
+        tags.append("non_coastal")
+    if any(term in text for term in ["highland", "plateau", "bangalore", "pune"]):
+        tags.append("highland")
+    if any(term in text for term in ["temperate", "england", "canada", "oceanic"]):
+        tags.append("temperate")
+    if any(term in text for term in ["arid", "dry", "jaipur", "ahmedabad", "delhi"]):
+        tags.append("dry")
+    if any(term in text for term in ["dense", "megacity", "delhi", "mumbai", "london"]):
+        tags.append("dense")
+
+    return tags
 
 
 def evaluate_projection(
@@ -154,7 +324,7 @@ def evaluate_projection(
         timeOfDay="Afternoon",
         overlayTypes=["Heat Risk", "Flood Risk", "Water Stress"],
     )
-    score = compute_scenario_score(scenario, location)
+    score = score_scenario(scenario)
     interaction = compute_composite_risk(
         ClimateInteractionRequest(
             scenario=scenario,

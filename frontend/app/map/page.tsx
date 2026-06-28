@@ -1039,6 +1039,15 @@ export default function MapPage() {
 
       setSelectedCity(result.city);
       setRegionalMapping(result.regionalMapping);
+      setAreaRisk(null);
+      setLocalUrbanCell(null);
+      setSelectedClimateCell(null);
+      setClimateSurfaceMetadata(null);
+      setScenarioScore(createInitialScenarioScore(result.city));
+      setInspectedScenarioScore(createInitialScenarioScore(result.city));
+      setScenarioAScore(createInitialScenarioScore(result.city));
+      setScenarioBScore(createInitialScenarioScore(result.city));
+      setClimateOverlayEnabled(true);
     } catch {
       setApiError("Search failed. Keeping the current location selected.");
     } finally {
@@ -1200,6 +1209,14 @@ export default function MapPage() {
       setRegionalMapping(searchResult.regionalMapping);
       setFocusedCityName(searchResult.city.name);
       setFocusRequestId((currentId) => currentId + 1);
+      setAreaRisk(null);
+      setLocalUrbanCell(null);
+      setSelectedClimateCell(null);
+      setClimateSurfaceMetadata(null);
+      setScenarioScore(createInitialScenarioScore(searchResult.city));
+      setInspectedScenarioScore(createInitialScenarioScore(searchResult.city));
+      setScenarioAScore(createInitialScenarioScore(searchResult.city));
+      setScenarioBScore(createInitialScenarioScore(searchResult.city));
       setSelectedYear(result.extractedInputs.targetYear);
       setManualWarming(result.extractedInputs.warmingLevel);
       setScenarioMode("manual");
@@ -1227,6 +1244,14 @@ export default function MapPage() {
 
         setSelectedCity(result.city);
         setRegionalMapping(result.regionalMapping);
+        setAreaRisk(null);
+        setLocalUrbanCell(null);
+        setSelectedClimateCell(null);
+        setClimateSurfaceMetadata(null);
+        setScenarioScore(createInitialScenarioScore(result.city));
+        setInspectedScenarioScore(createInitialScenarioScore(result.city));
+        setScenarioAScore(createInitialScenarioScore(result.city));
+        setScenarioBScore(createInitialScenarioScore(result.city));
         setSelectedYear(advisorResult?.extractedInputs.targetYear ?? selectedYear);
         setManualWarming(advisorResult?.extractedInputs.warmingLevel ?? activeWarming);
         setScenarioMode("manual");
@@ -1288,7 +1313,10 @@ export default function MapPage() {
     [],
   );
 
-  const searchRegion = useCallback(async (query: string): Promise<SearchResult> => {
+  const searchRegion = useCallback(async (
+    query: string,
+    parentLocation?: string,
+  ): Promise<SearchResult> => {
     const center = syncedView?.center ?? lastMapView?.center ?? [31, 30];
 
     setLoadingState((current) => ({ ...current, searching: true }));
@@ -1297,13 +1325,23 @@ export default function MapPage() {
     try {
       const result = await searchLocation({
         query,
+        parentLocation,
         fallbackCenter: center,
       });
 
       setRegionalMapping(result.regionalMapping);
       setSelectedCity(result.city);
-      setFocusedCityName(result.kind === "known" ? result.city.name : "");
+      setFocusedCityName(result.city.name);
       setFocusRequestId((currentId) => currentId + 1);
+      setAreaRisk(null);
+      setLocalUrbanCell(null);
+      setSelectedClimateCell(null);
+      setClimateSurfaceMetadata(null);
+      setScenarioScore(createInitialScenarioScore(result.city));
+      setInspectedScenarioScore(createInitialScenarioScore(result.city));
+      setScenarioAScore(createInitialScenarioScore(result.city));
+      setScenarioBScore(createInitialScenarioScore(result.city));
+      setClimateOverlayEnabled(true);
 
       return result.kind;
     } catch {

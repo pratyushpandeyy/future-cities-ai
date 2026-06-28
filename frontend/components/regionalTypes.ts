@@ -4,7 +4,12 @@ export interface RegionalMappingData {
   climateZone: string;
   confidence: "Medium" | "High";
   nearestGridCell: string;
-  boundarySource: "database" | "simulated" | "real_geojson" | "simulated_fallback";
+  boundarySource:
+    | "database"
+    | "simulated"
+    | "real_geojson"
+    | "online_osm"
+    | "simulated_fallback";
   boundaryName?: string | null;
   boundaryMatchReason?: string | null;
   dbBoundaryId?: number | null;

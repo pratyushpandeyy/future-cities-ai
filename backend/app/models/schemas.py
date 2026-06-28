@@ -236,6 +236,10 @@ class RecommendationRequest(BaseModel):
     remote_work_flexibility: int = Field(ge=0, le=100)
 
 
+class CandidateScreenRequest(RecommendationRequest):
+    candidate_locations: list[str] = Field(default_factory=list)
+
+
 class RecommendedRegion(BaseModel):
     region_name: str
     location_name: str
@@ -246,6 +250,7 @@ class RecommendedRegion(BaseModel):
     dominant_future_risks: list[str]
     expected_livability_trajectory: str
     major_tradeoffs: list[str]
+    ranking_breakdown: dict[str, float] = Field(default_factory=dict)
     explanation: str
 
 
@@ -270,6 +275,13 @@ class RecommendationResponse(BaseModel):
     recommendation_model: str
 
 
+class CandidateScreenResponse(BaseModel):
+    current_location: RegionComparisonProjection
+    ranked_candidates: list[RecommendedRegion]
+    recommendation_model: str
+    screening_note: str
+
+
 class AdvisorQueryRequest(BaseModel):
     query_text: str
     selected_preferences: list[str] = Field(default_factory=list)
@@ -288,10 +300,73 @@ class AdvisorExtractedInputs(BaseModel):
     risk_tolerance: str
 
 
+class AdvisorEvidenceBundle(BaseModel):
+    model_version: str | None = None
+    scoring_source: str
+    model_confidence: str | None = None
+    model_inputs_used: list[str] = Field(default_factory=list)
+    climate_data_mode: str
+    climate_source_label: str
+    climate_source_confidence: str
+    sampled_variable: str | None = None
+    sampled_value: float | None = None
+    sampled_unit: str | None = None
+    grid_cell_id: str | None = None
+    boundary_source: str | None = None
+    explanation_grounding: str
+
+
+class AdvisorSystemAudit(BaseModel):
+    geocoder_provider: str | None = None
+    climate_data_mode: str
+    ml_model_version: str | None = None
+    ml_scoring_source: str
+    rag_retrieval_mode: str
+    rag_chunk_count: int
+    recommendation_model: str
+    fallback_notes: list[str] = Field(default_factory=list)
+
+
+class KnowledgeSource(BaseModel):
+    title: str
+    publisher: str
+    year: int | None = None
+    url: str | None = None
+
+
+class KnowledgeChunk(BaseModel):
+    chunk_id: str
+    title: str
+    text: str
+    source: KnowledgeSource
+    tags: list[str] = Field(default_factory=list)
+    relevance_score: float
+
+
+class RAGQueryRequest(BaseModel):
+    query_text: str = Field(min_length=1, max_length=2000)
+    location: str | None = None
+    climate_region_type: str | None = None
+    season: str | None = None
+    risks: list[str] = Field(default_factory=list)
+    max_chunks: int = Field(default=5, ge=1, le=10)
+
+
+class RAGQueryResponse(BaseModel):
+    query_text: str
+    retrieval_mode: str
+    chunks: list[KnowledgeChunk]
+    grounding_summary: str
+
+
 class AdvisorResponse(BaseModel):
     interpreted_query: str
     extracted_inputs: AdvisorExtractedInputs
     primary_location_score: "ScenarioScoreResponse"
+    evidence_bundle: AdvisorEvidenceBundle
+    system_audit: AdvisorSystemAudit
+    retrieved_knowledge: list[KnowledgeChunk] = Field(default_factory=list)
+    rag_grounding_summary: str | None = None
     recommendation_summary: str
     key_risks: list[str]
     suggested_comparison_locations: list[RecommendedRegion]
@@ -315,6 +390,8 @@ class ExplanationRequest(BaseModel):
     dominant_risk_driver: str
     selected_grid_cell: ClimateCellDetailResponse | None = None
     interaction_summary: ClimateInteractionResponse | None = None
+    retrieved_knowledge: list[KnowledgeChunk] = Field(default_factory=list)
+    rag_grounding_summary: str | None = None
 
 
 class ExplanationResponse(BaseModel):
@@ -492,6 +569,8 @@ class ClimateModelStatus(BaseModel):
     trained: bool
     trained_at: str | None = None
     training_row_count: int | None = None
+    training_data_path: str | None = None
+    training_source: str | None = None
     feature_names: list[str] = Field(default_factory=list)
     target_names: list[str] = Field(default_factory=list)
     metrics: dict[str, float] = Field(default_factory=dict)
@@ -500,10 +579,34 @@ class ClimateModelStatus(BaseModel):
 
 class ClimateModelTrainingRequest(BaseModel):
     output_path: str | None = None
+    training_data_path: str | None = None
     overwrite: bool = False
 
 
 class ClimateModelTrainingResponse(ClimateModelStatus):
+    message: str
+
+
+class ClimateFeatureHarvestRequest(BaseModel):
+    locations: list[str] = Field(default_factory=list)
+    years: list[int] = Field(default_factory=lambda: [2030, 2050, 2070])
+    warming_levels: list[float] = Field(default_factory=lambda: [1.7, 2.7, 3.5])
+    seasons: list[str] = Field(default_factory=lambda: ["Summer", "Monsoon", "Winter"])
+    time_of_day: str = "Afternoon"
+    climate_scenario: str = "ssp245"
+    climate_model: str | None = None
+    output_path: str | None = None
+    overwrite: bool = False
+
+
+class ClimateFeatureHarvestResponse(BaseModel):
+    output_path: str
+    row_count: int
+    location_count: int
+    feature_schema_version: str
+    training_source: str
+    fallback_row_count: int
+    real_data_row_count: int
     message: str
 
 

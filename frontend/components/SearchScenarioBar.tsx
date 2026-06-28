@@ -1,10 +1,14 @@
 "use client";
 
 import type { FormEvent } from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { motion } from "framer-motion";
 import { Search, SlidersHorizontal, Sparkles } from "lucide-react";
 import type { Season } from "@/lib/climateOverlaySimulation";
+import {
+  getLocationSuggestions,
+  type LocationSuggestion,
+} from "@/lib/api/mockClient";
 
 export type ScenarioMode = "predicted" | "manual";
 export type SearchResult = "known" | "regional";
@@ -23,7 +27,7 @@ interface SearchScenarioBarProps {
   onComparisonModeChange: (enabled: boolean) => void;
   onScientificViewChange: (enabled: boolean) => void;
   onDemoTourStart: () => void;
-  onSearch: (query: string) => Promise<SearchResult>;
+  onSearch: (query: string, parentLocation?: string) => Promise<SearchResult>;
 }
 
 export default function SearchScenarioBar({
@@ -43,8 +47,58 @@ export default function SearchScenarioBar({
   onSearch,
 }: SearchScenarioBarProps) {
   const [query, setQuery] = useState("");
+  const [parentLocation, setParentLocation] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+  const [suggestions, setSuggestions] = useState<LocationSuggestion[]>([]);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const suggestionRequestId = useRef(0);
+  const suppressNextSuggestions = useRef(false);
   const activeWarming = mode === "predicted" ? predictedWarming : warming;
+
+  useEffect(() => {
+    const trimmedQuery = query.trim();
+    const requestId = suggestionRequestId.current + 1;
+    suggestionRequestId.current = requestId;
+
+    if (suppressNextSuggestions.current) {
+      suppressNextSuggestions.current = false;
+      setSuggestionsLoading(false);
+      return;
+    }
+
+    if (trimmedQuery.length < 2) {
+      setSuggestions([]);
+      setSuggestionsLoading(false);
+      return;
+    }
+
+    setSuggestionsLoading(true);
+
+    const timeoutId = window.setTimeout(async () => {
+      try {
+        const nextSuggestions = await getLocationSuggestions(
+          trimmedQuery,
+          parentLocation,
+        );
+
+        if (suggestionRequestId.current === requestId) {
+          setSuggestions(nextSuggestions);
+          setSuggestionsOpen(nextSuggestions.length > 0);
+        }
+      } catch {
+        if (suggestionRequestId.current === requestId) {
+          setSuggestions([]);
+        }
+      } finally {
+        if (suggestionRequestId.current === requestId) {
+          setSuggestionsLoading(false);
+        }
+      }
+    }, 280);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [parentLocation, query]);
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -52,7 +106,28 @@ export default function SearchScenarioBar({
     setMessage("Searching...");
 
     try {
-      const result = await onSearch(query);
+      const result = await onSearch(query, parentLocation);
+      setSuggestionsOpen(false);
+      setMessage(
+        result === "known" ? null : "Region extrapolation mode activated",
+      );
+    } catch {
+      setMessage("Backend search unavailable. Try again in a moment.");
+    }
+  }
+
+  async function handleSuggestionSelect(suggestion: LocationSuggestion) {
+    suppressNextSuggestions.current = true;
+    setQuery(suggestion.locationName);
+    setParentLocation(suggestion.hierarchyLabel ?? suggestion.region);
+    setSuggestionsOpen(false);
+    setMessage("Searching...");
+
+    try {
+      const result = await onSearch(
+        suggestion.locationName,
+        suggestion.hierarchyLabel ?? suggestion.region,
+      );
       setMessage(
         result === "known" ? null : "Region extrapolation mode activated",
       );
@@ -69,18 +144,73 @@ export default function SearchScenarioBar({
       className="absolute left-4 right-4 top-4 z-40 rounded-lg border border-white/10 bg-black/60 p-3 shadow-[0_22px_70px_rgba(0,0,0,0.42)] backdrop-blur-2xl md:left-5 md:right-5"
     >
       <div className="grid gap-3 xl:grid-cols-[minmax(260px,1fr)_auto_minmax(260px,360px)] xl:items-center">
-        <form onSubmit={handleSubmit} className="relative">
-          <Search
-            aria-hidden="true"
-            size={17}
-            strokeWidth={1.8}
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40"
-          />
+        <form onSubmit={handleSubmit} className="space-y-2">
+          <div className="relative">
+            <Search
+              aria-hidden="true"
+              size={17}
+              strokeWidth={1.8}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-white/40"
+            />
+            <input
+              value={query}
+              onChange={(event) => {
+                setQuery(event.currentTarget.value);
+                setSuggestionsOpen(true);
+              }}
+              onFocus={() => setSuggestionsOpen(suggestions.length > 0)}
+              onKeyDown={(event) => {
+                if (event.key === "Escape") {
+                  setSuggestionsOpen(false);
+                }
+              }}
+              placeholder="Place or neighborhood"
+              className="h-11 w-full rounded-lg border border-white/10 bg-white/[0.055] pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-cyan-200/45 focus:bg-white/[0.075]"
+            />
+            {suggestionsOpen || suggestionsLoading ? (
+              <div className="absolute left-0 right-0 top-[calc(100%+0.35rem)] z-50 overflow-hidden rounded-lg border border-cyan-100/15 bg-[#08111b]/95 shadow-[0_18px_55px_rgba(0,0,0,0.45)] backdrop-blur-xl">
+                {suggestionsLoading ? (
+                  <div className="px-4 py-3 text-xs uppercase tracking-[0.16em] text-cyan-100/60">
+                    Searching places...
+                  </div>
+                ) : null}
+                {!suggestionsLoading && suggestions.length === 0 ? (
+                  <div className="px-4 py-3 text-xs text-white/45">
+                    Keep typing to resolve a place.
+                  </div>
+                ) : null}
+                {suggestions.map((suggestion) => (
+                  <button
+                    key={suggestion.id}
+                    type="button"
+                    onMouseDown={(event) => event.preventDefault()}
+                    onClick={() => handleSuggestionSelect(suggestion)}
+                    className="grid w-full grid-cols-[1fr_auto] gap-3 border-t border-white/10 px-4 py-3 text-left transition first:border-t-0 hover:bg-cyan-100/10"
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold text-white">
+                        {suggestion.label}
+                      </span>
+                      <span className="mt-1 block truncate text-xs text-white/45">
+                        {suggestion.hierarchyLabel ??
+                          [suggestion.city, suggestion.region, suggestion.country]
+                            .filter(Boolean)
+                            .join(" / ")}
+                      </span>
+                    </span>
+                    <span className="self-center rounded-full border border-white/10 bg-white/[0.05] px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-cyan-100/70">
+                      {suggestion.placeType ?? suggestion.geocoderProvider ?? "place"}
+                    </span>
+                  </button>
+                ))}
+              </div>
+            ) : null}
+          </div>
           <input
-            value={query}
-            onChange={(event) => setQuery(event.currentTarget.value)}
-            placeholder="Search any city, province, or neighborhood"
-            className="h-11 w-full rounded-lg border border-white/10 bg-white/[0.055] pl-10 pr-4 text-sm text-white outline-none transition placeholder:text-white/35 focus:border-cyan-200/45 focus:bg-white/[0.075]"
+            value={parentLocation}
+            onChange={(event) => setParentLocation(event.currentTarget.value)}
+            placeholder="City, state, or country context"
+            className="h-9 w-full rounded-lg border border-white/10 bg-white/[0.04] px-3 text-xs text-white outline-none transition placeholder:text-white/30 focus:border-cyan-200/35 focus:bg-white/[0.065]"
           />
           {message ? (
             <motion.p

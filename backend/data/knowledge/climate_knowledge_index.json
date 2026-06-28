@@ -1,0 +1,236 @@
+[
+  {
+    "chunk_id": "ipcc-urban-heat-001",
+    "title": "Urban Heat Exposure",
+    "text": "Urban areas can amplify heat stress through dense surfaces, low vegetation cover, waste heat, and reduced nighttime cooling. High nighttime heat retention is especially important for health because the body has less time to recover after hot days.",
+    "source": {
+      "title": "IPCC AR6 WGII Urban Adaptation Synthesis",
+      "publisher": "IPCC",
+      "year": 2022,
+      "url": "https://www.ipcc.ch/report/ar6/wg2/"
+    },
+    "tags": [
+      "heat",
+      "urban",
+      "nighttime",
+      "health",
+      "livability"
+    ]
+  },
+  {
+    "chunk_id": "ipcc-coastal-flood-001",
+    "title": "Coastal Flood Risk",
+    "text": "Coastal cities face compounding flood exposure from sea-level rise, storm surge, intense rainfall, drainage limits, and high-value infrastructure near waterfronts. Dense coastal corridors can experience higher disruption even when the flood hazard is moderate.",
+    "source": {
+      "title": "IPCC AR6 Sea Level and Coastal Risk",
+      "publisher": "IPCC",
+      "year": 2021,
+      "url": "https://www.ipcc.ch/report/ar6/wg1/"
+    },
+    "tags": [
+      "flood",
+      "coastal",
+      "infrastructure",
+      "sea level",
+      "storm surge"
+    ]
+  },
+  {
+    "chunk_id": "who-heat-health-001",
+    "title": "Heat And Health Sensitivity",
+    "text": "Heat risk is higher for older adults, children, outdoor workers, people with cardiovascular conditions, and people with respiratory sensitivity. Urban heat can worsen air quality and increase physiological stress during commuting and outdoor activity.",
+    "source": {
+      "title": "Climate Change and Health",
+      "publisher": "World Health Organization",
+      "year": 2023,
+      "url": "https://www.who.int/news-room/fact-sheets/detail/climate-change-and-health"
+    },
+    "tags": [
+      "health",
+      "heat",
+      "respiratory",
+      "outdoor work",
+      "commute"
+    ]
+  },
+  {
+    "chunk_id": "urban-green-cover-001",
+    "title": "Green Cover Cooling Buffer",
+    "text": "Tree canopy, parks, wetlands, and connected green corridors can lower local heat exposure by shading surfaces and supporting evaporative cooling. Loss of vegetation reduces the resilience buffer against heat stress and outdoor discomfort.",
+    "source": {
+      "title": "Urban Green Infrastructure and Climate Resilience",
+      "publisher": "UN-Habitat",
+      "year": 2020,
+      "url": "https://unhabitat.org/"
+    },
+    "tags": [
+      "green cover",
+      "vegetation",
+      "heat",
+      "resilience",
+      "outdoor comfort"
+    ]
+  },
+  {
+    "chunk_id": "monsoon-flood-001",
+    "title": "Monsoon Urban Flooding",
+    "text": "Monsoon flood risk depends on rainfall intensity, drainage capacity, impervious surfaces, lake and wetland loss, and low-lying transport corridors. Localized flooding can vary sharply within the same metropolitan region.",
+    "source": {
+      "title": "Urban Flood Risk Management Overview",
+      "publisher": "World Bank",
+      "year": 2021,
+      "url": "https://www.worldbank.org/"
+    },
+    "tags": [
+      "monsoon",
+      "flood",
+      "drainage",
+      "urban",
+      "locality"
+    ]
+  },
+  {
+    "chunk_id": "water-stress-001",
+    "title": "Water Stress And Livability",
+    "text": "Water stress can reduce livability resilience by affecting household reliability, vegetation health, cooling capacity, and adaptation options. Heat and water stress can compound each other during long dry periods.",
+    "source": {
+      "title": "Aqueduct Water Risk Framework",
+      "publisher": "World Resources Institute",
+      "year": 2023,
+      "url": "https://www.wri.org/aqueduct"
+    },
+    "tags": [
+      "water stress",
+      "heat",
+      "resilience",
+      "livability",
+      "dry periods"
+    ]
+  },
+  {
+    "chunk_id": "relocation-tradeoff-001",
+    "title": "Climate Relocation Tradeoffs",
+    "text": "Climate relocation decisions should compare heat, flood, water stress, air quality, livelihood access, family needs, and adaptation capacity. A cooler region can still have flood, housing, or infrastructure tradeoffs.",
+    "source": {
+      "title": "Climate Migration and Adaptation Planning",
+      "publisher": "IOM",
+      "year": 2022,
+      "url": "https://www.iom.int/"
+    },
+    "tags": [
+      "relocation",
+      "migration",
+      "tradeoffs",
+      "adaptation",
+      "livability"
+    ]
+  },
+  {
+    "chunk_id": "cmip6-downscaling-001",
+    "title": "Downscaled Future Climate Data",
+    "text": "Downscaled climate products translate global climate model projections into finer spatial grids. These products are useful for screening and comparison, but local planning still needs ground observations, urban form data, and uncertainty handling.",
+    "source": {
+      "title": "WorldClim Future Climate Data Documentation",
+      "publisher": "WorldClim",
+      "year": 2025,
+      "url": "https://www.worldclim.org/data/cmip6/cmip6climate.html"
+    },
+    "tags": [
+      "cmip6",
+      "downscaling",
+      "raster",
+      "uncertainty",
+      "climate data"
+    ]
+  },
+  {
+    "chunk_id": "intra-city-variation-001",
+    "title": "Neighborhood-Scale Climate Variation",
+    "text": "Climate risk can vary strongly within one city because neighborhoods differ in elevation, drainage, building density, surface materials, tree canopy, traffic exposure, and distance from water bodies. A city-level score should be treated as a screening estimate until neighborhood observations and high-resolution urban data are added.",
+    "source": {
+      "title": "Urban Climate Risk and Local Exposure Assessment",
+      "publisher": "C40 Cities",
+      "year": 2021,
+      "url": "https://www.c40.org/"
+    },
+    "tags": [
+      "neighborhood",
+      "locality",
+      "urban",
+      "exposure",
+      "granularity"
+    ]
+  },
+  {
+    "chunk_id": "humid-heat-001",
+    "title": "Humid Heat And Outdoor Comfort",
+    "text": "Humid heat can reduce outdoor comfort even when air temperature alone does not look extreme. High humidity slows sweat evaporation, increasing physiological strain during walking, commuting, outdoor work, sport, and poorly ventilated indoor environments.",
+    "source": {
+      "title": "Heat Stress and Human Health Review",
+      "publisher": "The Lancet Countdown",
+      "year": 2023,
+      "url": "https://www.lancetcountdown.org/"
+    },
+    "tags": [
+      "humidity",
+      "heat",
+      "wet bulb",
+      "outdoor comfort",
+      "health"
+    ]
+  },
+  {
+    "chunk_id": "adaptation-buffer-001",
+    "title": "Adaptation Capacity Buffers Future Risk",
+    "text": "Cooling centers, shaded mobility corridors, heat-health warning systems, drainage upgrades, sponge-city measures, water reuse, and urban greening can reduce future exposure. Climate suitability should therefore compare both hazard intensity and adaptation capacity.",
+    "source": {
+      "title": "Adaptation Gap Report",
+      "publisher": "UNEP",
+      "year": 2023,
+      "url": "https://www.unep.org/resources/adaptation-gap-report"
+    },
+    "tags": [
+      "adaptation",
+      "resilience",
+      "cooling",
+      "drainage",
+      "green cover"
+    ]
+  },
+  {
+    "chunk_id": "air-quality-heat-001",
+    "title": "Heat And Air Quality Interaction",
+    "text": "Hot stagnant conditions can worsen ozone formation and pollution exposure. People with asthma or respiratory sensitivity may experience compounded risk when heat stress and poor air quality occur together.",
+    "source": {
+      "title": "Air Pollution and Climate Interactions",
+      "publisher": "World Health Organization",
+      "year": 2021,
+      "url": "https://www.who.int/health-topics/air-pollution"
+    },
+    "tags": [
+      "air quality",
+      "asthma",
+      "respiratory",
+      "heat",
+      "pollution"
+    ]
+  },
+  {
+    "chunk_id": "district-relocation-001",
+    "title": "District-Level Relocation Screening",
+    "text": "For relocation within a large city, district-level screening should compare heat exposure, flood corridors, commute dependency, housing quality, green cover, healthcare access, and household sensitivity. The best district is rarely the one with the lowest single hazard; it is the one with the strongest overall resilience fit.",
+    "source": {
+      "title": "Urban Resilience Planning Guidance",
+      "publisher": "UNDRR",
+      "year": 2022,
+      "url": "https://www.undrr.org/"
+    },
+    "tags": [
+      "relocation",
+      "district",
+      "neighborhood",
+      "resilience",
+      "tradeoffs"
+    ]
+  }
+]

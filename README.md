@@ -122,6 +122,23 @@ http://127.0.0.1:8000/api/admin/boundaries
 http://127.0.0.1:8000/api/admin/boundaries/1
 ```
 
+Import additional GeoJSON boundary files from sources such as geoBoundaries,
+GADM, OSM exports, or Overture-derived GeoJSON:
+
+```powershell
+cd backend
+python scripts/import_boundaries.py --input data/raw/geoboundaries --provider geoboundaries --region-type administrative_boundary
+```
+
+The importer reads every `.geojson`/`.json` file under the input path,
+normalizes common name fields such as `shapeName`, `NAME_1`, `NAME_2`,
+and `name`, then inserts or updates `administrative_boundaries` rows.
+Boundary lookup now tries geocoded names from specific to broad:
+locality/POI input -> district -> city -> state/region -> country. If a
+locality polygon is missing, the service can still match an imported city,
+district, or state polygon before falling back to local seed files or a
+simulated bbox.
+
 Resolve a place into one combined spatial context:
 
 ```powershell
@@ -158,9 +175,30 @@ http://127.0.0.1:8000/api/model/status
 ```
 
 The current model artifact is a lightweight linear-regression baseline trained
-from deterministic expert-rule labels. It is intentionally structured like a
-real model artifact so future CMIP6/urban outcome training data can replace the
-synthetic labels without changing frontend or scenario API contracts.
+from harvested feature rows when available, and deterministic expert-rule
+profiles otherwise. It is intentionally structured like a real model artifact
+so future CMIP6/urban outcome training data can replace the temporary labels
+without changing frontend or scenario API contracts.
+
+Harvest compact training features from the same data path used by live scoring:
+
+```powershell
+cd backend
+python scripts/harvest_training_features.py --overwrite
+python scripts/train_climate_model.py --training-data data\models\climate_training_features_v2.json --overwrite
+```
+
+You can also do the same through Swagger:
+
+```text
+POST /api/features/harvest
+POST /api/model/train
+GET /api/model/status
+```
+
+This is the Option B training path: remote/local climate providers are sampled
+into a compact JSON feature table, then the model trains from that table. The
+raw global rasters do not need to live inside Git.
 
 See `docs/DATA_SOURCES_AND_STORAGE.md` for the dataset download order and cloud
 storage architecture.

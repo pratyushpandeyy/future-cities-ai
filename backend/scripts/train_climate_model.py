@@ -20,6 +20,12 @@ def parse_args() -> argparse.Namespace:
         help="Optional output artifact path. Defaults to backend/data/models/.",
     )
     parser.add_argument(
+        "--training-data",
+        type=Path,
+        default=None,
+        help="Optional harvested feature dataset path.",
+    )
+    parser.add_argument(
         "--overwrite",
         action="store_true",
         help="Overwrite an existing model artifact.",
@@ -31,12 +37,15 @@ def main() -> None:
     args = parse_args()
     result = train_climate_adjustment_model(
         output_path=args.output,
+        training_data_path=args.training_data,
         overwrite=args.overwrite,
     )
     print(result.message)
     print(f"model_version: {result.model_version}")
     print(f"model_type: {result.model_type}")
     print(f"artifact_path: {result.artifact_path}")
+    print(f"training_source: {result.training_source}")
+    print(f"training_data_path: {result.training_data_path}")
     print(f"training_row_count: {result.training_row_count}")
     print("metrics:")
 

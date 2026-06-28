@@ -13,7 +13,7 @@ from app.models.schemas import (
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
 MODEL_DIR = BACKEND_ROOT / "data" / "models"
 DEFAULT_MODEL_PATH = MODEL_DIR / "climate_adjustment_model_v1.json"
-TRAINED_MODEL_VERSION = "trained_linear_adjustment_v1"
+TRAINED_MODEL_VERSION = "trained_linear_adjustment_v2"
 MODEL_TYPE = "ordinary_least_squares_linear_regression"
 
 FEATURE_NAMES = [
@@ -58,6 +58,7 @@ TARGET_NAMES = [
 def train_climate_adjustment_model(
     output_path: Path | None = None,
     *,
+    training_data_path: Path | None = None,
     overwrite: bool = False,
 ) -> ClimateModelTrainingResponse:
     path = output_path or DEFAULT_MODEL_PATH
@@ -72,22 +73,27 @@ def train_climate_adjustment_model(
             ),
         )
 
-    rows = build_training_rows()
+    rows, training_source, resolved_training_data_path = load_training_rows(
+        training_data_path,
+    )
     coefficients, metrics = fit_linear_models(rows)
     path.parent.mkdir(parents=True, exist_ok=True)
+    target_note = training_target_note(training_source)
     artifact = {
         "model_version": TRAINED_MODEL_VERSION,
         "model_type": MODEL_TYPE,
         "trained_at": datetime.now(UTC).isoformat(),
         "training_row_count": len(rows),
+        "training_source": training_source,
+        "training_data_path": str(resolved_training_data_path) if resolved_training_data_path else None,
         "feature_names": FEATURE_NAMES,
         "feature_defaults": FEATURE_DEFAULTS,
         "target_names": TARGET_NAMES,
         "coefficients": coefficients,
         "metrics": metrics,
         "notes": [
-            "Synthetic supervised baseline trained from expert rule targets.",
-            "Replace training_rows with real CMIP6, observed heat, flood, and urban outcome labels when available.",
+            "Supervised baseline trained from harvested feature rows when available.",
+            target_note,
             "The serving API is stable so future model artifacts can replace this baseline without changing frontend calls.",
         ],
     }
@@ -104,6 +110,8 @@ def train_climate_adjustment_model(
         target_names=TARGET_NAMES,
         metrics=metrics,
         notes=artifact["notes"],
+        training_data_path=artifact["training_data_path"],
+        training_source=training_source,
         message="Trained climate adjustment model artifact.",
     )
 
@@ -117,6 +125,7 @@ def get_model_status(path: Path | None = None) -> ClimateModelStatus:
             model_type="formula_fallback",
             artifact_path=str(artifact_path),
             trained=False,
+            training_source="formula_fallback",
             notes=[
                 "No trained artifact found. Backend will use deterministic formula fallback.",
                 "Run backend/scripts/train_climate_model.py to create the local model artifact.",
@@ -131,6 +140,8 @@ def get_model_status(path: Path | None = None) -> ClimateModelStatus:
         trained=True,
         trained_at=str(artifact.get("trained_at")),
         training_row_count=int(artifact.get("training_row_count", 0)),
+        training_data_path=artifact.get("training_data_path"),
+        training_source=artifact.get("training_source"),
         feature_names=list(artifact.get("feature_names", [])),
         target_names=list(artifact.get("target_names", [])),
         metrics={
@@ -172,6 +183,106 @@ def predict_with_trained_model(
         predictions[target] = round(dot(vector, weights), 3)
 
     return predictions
+
+
+def load_training_rows(
+    training_data_path: Path | None = None,
+) -> tuple[list[dict[str, dict[str, float]]], str, Path | None]:
+    if training_data_path:
+        rows = rows_from_harvest_file(training_data_path)
+
+        if rows:
+            return rows, training_source_from_harvest_file(training_data_path), training_data_path
+
+    from app.services.feature_harvesting import DEFAULT_FEATURE_DATASET_PATH
+
+    rows = rows_from_harvest_file(DEFAULT_FEATURE_DATASET_PATH)
+
+    if rows:
+        return (
+            rows,
+            training_source_from_harvest_file(DEFAULT_FEATURE_DATASET_PATH),
+            DEFAULT_FEATURE_DATASET_PATH,
+        )
+
+    return build_training_rows(), "synthetic_expert_rule_profiles", None
+
+
+def training_source_from_harvest_file(path: Path) -> str:
+    if not path.exists():
+        return "harvested_feature_dataset"
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    training_source = str(payload.get("training_source") or "harvested_feature_dataset")
+    target_source = payload.get("target_source")
+
+    if target_source:
+        return f"{training_source}:{target_source}"
+
+    return training_source
+
+
+def training_target_note(training_source: str) -> str:
+    if "raster_anchored_proxy_labels" in training_source:
+        return (
+            "Targets are raster/feature-anchored proxy labels generated from the "
+            "same climate feature pipeline used at serving time; replace them "
+            "with observed heat, flood, health, and urban outcome labels when available."
+        )
+
+    return (
+        "Targets are currently expert-rule labels; replace them with observed "
+        "heat, flood, and urban outcome labels when available."
+    )
+
+
+def rows_from_harvest_file(path: Path) -> list[dict[str, dict[str, float]]]:
+    if not path.exists():
+        return []
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    rows = payload.get("rows", [])
+
+    if not isinstance(rows, list):
+        return []
+
+    training_rows: list[dict[str, dict[str, float]]] = []
+
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+
+        features = coerce_numeric_mapping(row.get("features"))
+        targets = coerce_numeric_mapping(row.get("targets"))
+
+        if not features or not targets:
+            continue
+
+        complete_features = dict(FEATURE_DEFAULTS)
+        complete_features.update(features)
+        training_rows.append(
+            {
+                "features": complete_features,
+                "targets": targets,
+            },
+        )
+
+    return training_rows
+
+
+def coerce_numeric_mapping(value: object) -> dict[str, float]:
+    if not isinstance(value, dict):
+        return {}
+
+    result: dict[str, float] = {}
+
+    for key, item in value.items():
+        try:
+            result[str(key)] = float(item)
+        except (TypeError, ValueError):
+            continue
+
+    return result
 
 
 def build_training_rows() -> list[dict[str, dict[str, float]]]:
